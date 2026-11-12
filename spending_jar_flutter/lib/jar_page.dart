@@ -447,64 +447,74 @@ class CategoryTile extends StatelessWidget {
   }
 }
 
-/// The jar that empties as you spend. [fill] is 0..1.
+/// A battery that empties as you spend. [fill] is 0..1.
 class JarGraphic extends StatelessWidget {
   const JarGraphic({super.key, required this.fill, required this.color});
   final double fill;
   final Color color;
 
-  static const double w = 90, h = 130, radius = 24;
+  static const double w = 76, h = 130;
+  static const double capW = 30, capH = 9;
+  static const double border = 3.5, gap = 4;
 
   @override
   Widget build(BuildContext context) {
+    const bodyH = h - capH;
+    const innerH = bodyH - 2 * border - 2 * gap;
     return SizedBox(
       width: w,
       height: h,
-      child: Stack(
+      child: Column(
         children: [
-          ClipRRect(
-            borderRadius: const BorderRadius.vertical(bottom: Radius.circular(radius)),
-            child: Container(
-              color: Colors.white,
-              alignment: Alignment.bottomCenter,
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 400),
-                curve: Curves.easeOut,
-                height: h * fill,
-                width: w,
-                color: color,
-              ),
+          // Terminal on top
+          Container(
+            width: capW,
+            height: capH,
+            decoration: const BoxDecoration(
+              color: Color(0xFF333333),
+              borderRadius: BorderRadius.vertical(top: Radius.circular(4)),
             ),
           ),
-          const Positioned.fill(child: CustomPaint(painter: _JarOutline())),
+          // Body
+          Container(
+            width: w,
+            height: bodyH,
+            padding: const EdgeInsets.all(gap),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              border: Border.all(color: const Color(0xFF333333), width: border),
+            ),
+            child: Stack(
+              alignment: Alignment.bottomCenter,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 400),
+                  curve: Curves.easeOut,
+                  height: innerH * fill,
+                  width: double.infinity,
+                  decoration: BoxDecoration(
+                    color: color,
+                    borderRadius: BorderRadius.circular(9),
+                  ),
+                ),
+                Positioned.fill(
+                  child: Center(
+                    child: Text(
+                      '${(fill * 100).round()}%',
+                      style: TextStyle(
+                        fontSize: 17,
+                        fontWeight: FontWeight.w700,
+                        color: fill > 0.55 ? Colors.white : const Color(0xFF333333),
+                      ),
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
-}
-
-class _JarOutline extends CustomPainter {
-  const _JarOutline();
-
-  @override
-  void paint(Canvas canvas, Size size) {
-    const s = 3.0; // stroke width
-    const r = JarGraphic.radius;
-    final w = size.width, h = size.height;
-    final paint = Paint()
-      ..color = const Color(0xFF333333)
-      ..style = PaintingStyle.stroke
-      ..strokeWidth = s;
-    final path = Path()
-      ..moveTo(s / 2, 0)
-      ..lineTo(s / 2, h - r)
-      ..arcToPoint(Offset(r, h - s / 2), radius: const Radius.circular(r - s / 2), clockwise: false)
-      ..lineTo(w - r, h - s / 2)
-      ..arcToPoint(Offset(w - s / 2, h - r), radius: const Radius.circular(r - s / 2), clockwise: false)
-      ..lineTo(w - s / 2, 0);
-    canvas.drawPath(path, paint);
-  }
-
-  @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
