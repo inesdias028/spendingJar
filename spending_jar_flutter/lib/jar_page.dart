@@ -62,26 +62,79 @@ class _JarPageState extends State<JarPage> {
     _amountFocus.unfocus();
   }
 
-  Future<void> _editBudget() async {
-    final ctrl = TextEditingController(text: store.budget.toStringAsFixed(2).replaceAll('.', ','));
-    final value = await showDialog<double>(
+  Future<void> _editBudgets() async {
+    final ctrls = {
+      for (final p in Period.values)
+        p: TextEditingController(
+            text: store.isSet(p) ? store.budgets[p]!.toStringAsFixed(2).replaceAll('.', ',') : ''),
+    };
+    final errors = <Period, String?>{};
+    final result = await showDialog<Map<Period, double?>>(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Weekly budget'),
-        content: TextField(
-          controller: ctrl,
-          autofocus: true,
-          keyboardType: const TextInputType.numberWithOptions(decimal: true),
-          decoration: const InputDecoration(prefixText: '€ '),
-          onSubmitted: (t) => Navigator.pop(ctx, parseAmount(t)),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-          FilledButton(onPressed: () => Navigator.pop(ctx, parseAmount(ctrl.text)), child: const Text('Save')),
-        ],
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) {
+          void save() {
+            final out = <Period, double?>{};
+            errors.clear();
+            for (final p in Period.values) {
+              final t = ctrls[p]!.text.trim();
+              if (t.isEmpty) {
+                out[p] = null;
+              } else {
+                final v = parseAmount(t);
+                if (v == null) errors[p] = 'Enter an amount, like 400 or 12,50';
+                out[p] = v;
+              }
+            }
+            if (errors.isNotEmpty) {
+              setLocal(() {});
+              return;
+            }
+            Navigator.pop(ctx, out);
+          }
+
+          return AlertDialog(
+            title: const Text('Budgets'),
+            content: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Set a goal for any period. Leave one empty and it is worked out from the others.',
+                    style: TextStyle(color: AppColors.muted, fontSize: 13),
+                  ),
+                  const SizedBox(height: 14),
+                  for (final p in Period.values) ...[
+                    TextField(
+                      controller: ctrls[p],
+                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                      decoration: InputDecoration(
+                        labelText: 'Per ${p.word}',
+                        prefixText: '€ ',
+                        hintText: 'Auto (${euro(store.estimateFor(p))})',
+                        errorText: errors[p],
+                        border: const OutlineInputBorder(),
+                      ),
+                      onChanged: (_) {
+                        if (errors[p] != null) setLocal(() => errors.remove(p));
+                      },
+                      onSubmitted: (_) => save(),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
+                ],
+              ),
+            ),
+            actions: [
+              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+              FilledButton(onPressed: save, child: const Text('Save')),
+            ],
+          );
+        },
       ),
     );
-    if (value != null) store.setBudget(value);
+    if (result != null) store.setBudgets(result);
   }
 
   Future<void> _newCategory() async {
@@ -174,13 +227,13 @@ class _JarPageState extends State<JarPage> {
     return ListenableBuilder(
       listenable: store,
       builder: (context, _) {
-        final now = DateTime.now();
-        final weekStart = startOfWeek(now);
-        final weekEnd = DateTime(weekStart.year, weekStart.month, weekStart.day + 7);
-        final week = store.between(weekStart, weekEnd);
+        final period = store.jarPeriod;
+        final r = rangeFor(period, 0);
+        final week = store.between(r.start, r.end);
         final spent = week.fold<double>(0, (s, e) => s + e.amount);
-        final left = store.budget - spent;
-        final fill = (left / store.budget).clamp(0.0, 1.0);
+        final budget = store.budgetFor(period, r.days);
+        final left = budget - spent;
+        final fill = budget > 0 ? (left / budget).clamp(0.0, 1.0) : 0.0;
         final jarColor = fill > 0.5 ? AppColors.green : (fill > 0.2 ? AppColors.orange : AppColors.red);
 
         return SafeArea(
@@ -189,6 +242,19 @@ class _JarPageState extends State<JarPage> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
               children: [
+                // ---- Which period the jar tracks ----
+                SegmentedButton<Period>(
+                  showSelectedIcon: false,
+                  segments: const [
+                    ButtonSegment(value: Period.week, label: Text('Week')),
+                    ButtonSegment(value: Period.month, label: Text('Month')),
+                    ButtonSegment(value: Period.year, label: Text('Year')),
+                  ],
+                  selected: {period},
+                  onSelectionChanged: (sel) => store.setJarPeriod(sel.first),
+                ),
+                const SizedBox(height: 18),
+
                 // ---- Jar + summary ----
                 Row(
                   children: [
@@ -198,7 +264,7 @@ class _JarPageState extends State<JarPage> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          const Text('Left this week', style: TextStyle(color: AppColors.muted, fontSize: 14)),
+                          Text('Left this ${period.word}', style: const TextStyle(color: AppColors.muted, fontSize: 14)),
                           FittedBox(
                             fit: BoxFit.scaleDown,
                             alignment: Alignment.centerLeft,
@@ -218,9 +284,9 @@ class _JarPageState extends State<JarPage> {
                               foregroundColor: AppColors.blue,
                               tapTargetSize: MaterialTapTargetSize.padded,
                             ),
-                            onPressed: _editBudget,
+                            onPressed: _editBudgets,
                             icon: const Icon(Icons.edit, size: 16),
-                            label: Text('Budget ${euro(store.budget)}'),
+                            label: Text('Budget ${euro(budget)} / ${period.word}${store.isSet(period) ? '' : ' (auto)'}'),
                           ),
                         ],
                       ),
@@ -278,7 +344,7 @@ class _JarPageState extends State<JarPage> {
 
                 // ---- This week ----
                 const SizedBox(height: 22),
-                const Text('This week', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
+                Text('This ${period.word}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 8),
                 if (week.isEmpty)
                   const Padding(

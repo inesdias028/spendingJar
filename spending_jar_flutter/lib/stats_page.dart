@@ -5,77 +5,6 @@ import 'package:flutter/material.dart';
 import 'main.dart';
 import 'models.dart';
 
-enum Period { week, month, year }
-
-class _Bucket {
-  _Bucket(this.start, this.end, this.label);
-  final DateTime start;
-  final DateTime end;
-  final String label;
-}
-
-class _Range {
-  _Range(this.start, this.end, this.buckets, this.label);
-  final DateTime start;
-  final DateTime end;
-  final List<_Bucket> buckets;
-  final String label;
-
-  /// Whole days in the period (DST-safe).
-  int get days => DateTime.utc(end.year, end.month, end.day)
-      .difference(DateTime.utc(start.year, start.month, start.day))
-      .inDays;
-}
-
-_Range _rangeFor(Period p, int offset) {
-  final now = DateTime.now();
-  switch (p) {
-    case Period.week:
-      final base = startOfWeek(now);
-      final start = DateTime(base.year, base.month, base.day + offset * 7);
-      final end = DateTime(start.year, start.month, start.day + 7);
-      final buckets = [
-        for (var i = 0; i < 7; i++)
-          _Bucket(
-            DateTime(start.year, start.month, start.day + i),
-            DateTime(start.year, start.month, start.day + i + 1),
-            weekdayShort[i].substring(0, 1),
-          ),
-      ];
-      final last = DateTime(end.year, end.month, end.day - 1);
-      final label = offset == 0
-          ? 'This week'
-          : offset == -1
-              ? 'Last week'
-              : '${start.day} ${monthNames[start.month - 1].substring(0, 3)} – '
-                  '${last.day} ${monthNames[last.month - 1].substring(0, 3)}';
-      return _Range(start, end, buckets, label);
-
-    case Period.month:
-      final start = DateTime(now.year, now.month + offset, 1);
-      final end = DateTime(start.year, start.month + 1, 1);
-      final n = DateTime(start.year, start.month + 1, 0).day;
-      final buckets = [
-        for (var d = 1; d <= n; d++)
-          _Bucket(
-            DateTime(start.year, start.month, d),
-            DateTime(start.year, start.month, d + 1),
-            (d == 1 || d % 5 == 0) ? '$d' : '',
-          ),
-      ];
-      return _Range(start, end, buckets, '${monthNames[start.month - 1]} ${start.year}');
-
-    case Period.year:
-      final start = DateTime(now.year + offset, 1, 1);
-      final end = DateTime(start.year + 1, 1, 1);
-      final buckets = [
-        for (var m = 1; m <= 12; m++)
-          _Bucket(DateTime(start.year, m, 1), DateTime(start.year, m + 1, 1), monthNames[m - 1].substring(0, 1)),
-      ];
-      return _Range(start, end, buckets, '${start.year}');
-  }
-}
-
 class StatsPage extends StatefulWidget {
   const StatsPage({super.key, required this.store});
   final Store store;
@@ -94,7 +23,7 @@ class _StatsPageState extends State<StatsPage> {
       listenable: widget.store,
       builder: (context, _) {
         final store = widget.store;
-        final r = _rangeFor(_period, _offset);
+        final r = rangeFor(_period, _offset);
         final items = store.between(r.start, r.end);
         final total = items.fold<double>(0, (s, e) => s + e.amount);
 
@@ -106,7 +35,8 @@ class _StatsPageState extends State<StatsPage> {
                     .inDays +
                 1)
             : r.days;
-        final periodBudget = store.budget * r.days / 7;
+        final periodBudget = store.budgetFor(_period, r.days);
+        final estimated = !store.isSet(_period);
         final pct = periodBudget > 0 ? total / periodBudget : 0.0;
         final diff = periodBudget - total;
         final barColor = pct < 0.8 ? AppColors.green : (pct <= 1 ? AppColors.orange : AppColors.red);
@@ -191,7 +121,7 @@ class _StatsPageState extends State<StatsPage> {
               ),
               const SizedBox(height: 6),
               Text(
-                '${(pct * 100).round()}% of ${euro(periodBudget)} budget · '
+                '${(pct * 100).round()}% of ${euro(periodBudget)}${estimated ? ' estimated' : ''} budget · '
                 '${diff >= 0 ? '${euro(diff)} under' : '${euro(-diff)} over'}',
                 style: const TextStyle(fontSize: 13, color: AppColors.muted),
               ),
@@ -257,7 +187,7 @@ class _StatCard extends StatelessWidget {
 
 class _BarChart extends StatelessWidget {
   const _BarChart({required this.buckets, required this.sums});
-  final List<_Bucket> buckets;
+  final List<Bucket> buckets;
   final List<double> sums;
 
   @override

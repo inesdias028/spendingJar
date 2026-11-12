@@ -93,7 +93,11 @@ class Store extends ChangeNotifier {
   // Data saved on this device by the earlier, no-login version of the app.
   static const _localKey = 'spending-jar-v1';
 
-  double budget = 100;
+  /// Budget for each period. null = not set (worked out from the others).
+  Map<Period, double?> budgets = {Period.week: 100, Period.month: null, Period.year: null};
+
+  /// Which period the jar on the main screen tracks.
+  Period jarPeriod = Period.week;
   List<Expense> expenses = [];
   List<Category> categories = List.of(defaultCategories);
 
@@ -123,7 +127,17 @@ class Store extends ChangeNotifier {
     _userSub = _userDoc.snapshots().listen((d) {
       final m = d.data();
       if (m != null) {
-        budget = (m['budget'] as num?)?.toDouble() ?? 100;
+        final bm = m['budgets'];
+        if (bm is Map) {
+          budgets = {for (final p in Period.values) p: (bm[p.name] as num?)?.toDouble()};
+        } else {
+          budgets = {
+            Period.week: (m['budget'] as num?)?.toDouble() ?? 100,
+            Period.month: null,
+            Period.year: null,
+          };
+        }
+        jarPeriod = Period.values.firstWhere((p) => p.name == m['jarPeriod'], orElse: () => Period.week);
         if (m['categories'] is List) {
           categories = (m['categories'] as List)
               .map((c) => Category.fromJson(Map<String, dynamic>.from(c as Map)))
@@ -182,7 +196,8 @@ class Store extends ChangeNotifier {
   /// Writes a new account's starting data.
   Future<void> _writeAll(double b, List<Category> cats, List<Expense> exps) async {
     await _userDoc.set({
-      'budget': b,
+      'budgets': {'week': b, 'month': null, 'year': null},
+      'jarPeriod': 'week',
       'categories': cats.map((c) => c.toJson()).toList(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
@@ -198,7 +213,8 @@ class Store extends ChangeNotifier {
   static String _safeId(String id) => id.isEmpty ? DateTime.now().microsecondsSinceEpoch.toString() : id.replaceAll('/', '_');
 
   Future<void> _saveSettings() => _userDoc.update({
-        'budget': budget,
+        'budgets': {for (final p in Period.values) p.name: budgets[p]},
+        'jarPeriod': jarPeriod.name,
         'categories': categories.map((c) => c.toJson()).toList(),
         'updatedAt': FieldValue.serverTimestamp(),
       }).catchError(_fail);
@@ -254,8 +270,31 @@ class Store extends ChangeNotifier {
     _saveSettings();
   }
 
-  void setBudget(double value) {
-    budget = value;
+  /// Money per day, from the first budget that is set (week, then month, then year).
+  double get _perDay {
+    final w = budgets[Period.week], mo = budgets[Period.month], y = budgets[Period.year];
+    if (w != null) return w / 7;
+    if (mo != null) return mo * 12 / 365.25;
+    if (y != null) return y / 365.25;
+    return 100 / 7;
+  }
+
+  bool isSet(Period p) => budgets[p] != null;
+
+  /// The budget for a period of [days] days: the one you set, or an estimate.
+  double budgetFor(Period p, int days) => budgets[p] ?? _perDay * days;
+
+  /// What an unset budget would be, for a typical period of that kind.
+  double estimateFor(Period p) => _perDay * (p == Period.week ? 7 : p == Period.month ? 365.25 / 12 : 365.25);
+
+  void setBudgets(Map<Period, double?> value) {
+    budgets = Map.of(value);
+    notifyListeners();
+    _saveSettings();
+  }
+
+  void setJarPeriod(Period p) {
+    jarPeriod = p;
     notifyListeners();
     _saveSettings();
   }
@@ -272,6 +311,87 @@ class Store extends ChangeNotifier {
       .where((e) => !e.date.isBefore(start) && e.date.isBefore(end))
       .toList()
     ..sort((a, b) => b.date.compareTo(a.date));
+}
+
+// ---------------------------------------------------------------------------
+// Periods (week / month / year) and their date ranges
+// ---------------------------------------------------------------------------
+
+enum Period { week, month, year }
+
+extension PeriodWords on Period {
+  /// "week", "month", "year"
+  String get word => name;
+  String get title => '${name[0].toUpperCase()}${name.substring(1)}';
+}
+
+class Bucket {
+  Bucket(this.start, this.end, this.label);
+  final DateTime start;
+  final DateTime end;
+  final String label;
+}
+
+class PeriodRange {
+  PeriodRange(this.start, this.end, this.buckets, this.label);
+  final DateTime start;
+  final DateTime end;
+  final List<Bucket> buckets;
+  final String label;
+
+  /// Whole days in the period (DST-safe).
+  int get days => DateTime.utc(end.year, end.month, end.day)
+      .difference(DateTime.utc(start.year, start.month, start.day))
+      .inDays;
+}
+
+PeriodRange rangeFor(Period p, int offset) {
+  final now = DateTime.now();
+  switch (p) {
+    case Period.week:
+      final base = startOfWeek(now);
+      final start = DateTime(base.year, base.month, base.day + offset * 7);
+      final end = DateTime(start.year, start.month, start.day + 7);
+      final buckets = [
+        for (var i = 0; i < 7; i++)
+          Bucket(
+            DateTime(start.year, start.month, start.day + i),
+            DateTime(start.year, start.month, start.day + i + 1),
+            weekdayShort[i].substring(0, 1),
+          ),
+      ];
+      final last = DateTime(end.year, end.month, end.day - 1);
+      final label = offset == 0
+          ? 'This week'
+          : offset == -1
+              ? 'Last week'
+              : '${start.day} ${monthNames[start.month - 1].substring(0, 3)} – '
+                  '${last.day} ${monthNames[last.month - 1].substring(0, 3)}';
+      return PeriodRange(start, end, buckets, label);
+
+    case Period.month:
+      final start = DateTime(now.year, now.month + offset, 1);
+      final end = DateTime(start.year, start.month + 1, 1);
+      final n = DateTime(start.year, start.month + 1, 0).day;
+      final buckets = [
+        for (var d = 1; d <= n; d++)
+          Bucket(
+            DateTime(start.year, start.month, d),
+            DateTime(start.year, start.month, d + 1),
+            (d == 1 || d % 5 == 0) ? '$d' : '',
+          ),
+      ];
+      return PeriodRange(start, end, buckets, '${monthNames[start.month - 1]} ${start.year}');
+
+    case Period.year:
+      final start = DateTime(now.year + offset, 1, 1);
+      final end = DateTime(start.year + 1, 1, 1);
+      final buckets = [
+        for (var m = 1; m <= 12; m++)
+          Bucket(DateTime(start.year, m, 1), DateTime(start.year, m + 1, 1), monthNames[m - 1].substring(0, 1)),
+      ];
+      return PeriodRange(start, end, buckets, '${start.year}');
+  }
 }
 
 // ---------------------------------------------------------------------------
