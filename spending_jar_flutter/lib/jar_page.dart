@@ -4,6 +4,7 @@ import 'package:flutter/services.dart';
 
 import 'main.dart';
 import 'models.dart';
+import 'recurring_page.dart';
 
 class JarPage extends StatefulWidget {
   const JarPage({super.key, required this.store});
@@ -106,7 +107,23 @@ class _JarPageState extends State<JarPage> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
               children: [
-                const LargeTitle('Spending Jar'),
+                LargeTitle(
+                  'Spending Jar',
+                  trailing: CupertinoButton(
+                    padding: const EdgeInsets.all(6),
+                    onPressed: () => showCupertinoModalPopup<void>(
+                      context: context,
+                      builder: (_) => RecurringSheet(store: store),
+                    ),
+                    child: Container(
+                      width: 40,
+                      height: 40,
+                      alignment: Alignment.center,
+                      decoration: const BoxDecoration(color: AppColors.card, shape: BoxShape.circle),
+                      child: const Icon(CupertinoIcons.repeat, size: 22, color: AppColors.blue),
+                    ),
+                  ),
+                ),
 
                 SizedBox(
                   width: double.infinity,
@@ -297,7 +314,15 @@ class _ExpenseRow extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(category.label, style: const TextStyle(fontSize: 17)),
+                  Row(
+                    children: [
+                      Flexible(child: Text(category.label, style: const TextStyle(fontSize: 17))),
+                      if (expense.id.startsWith('r_')) ...[
+                        const SizedBox(width: 6),
+                        const Icon(CupertinoIcons.repeat, size: 14, color: AppColors.muted),
+                      ],
+                    ],
+                  ),
                   Text(shortDateTime(expense.date), style: const TextStyle(fontSize: 13, color: AppColors.muted)),
                 ],
               ),

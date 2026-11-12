@@ -102,11 +102,24 @@ class _SignedIn extends StatefulWidget {
   State<_SignedIn> createState() => _SignedInState();
 }
 
-class _SignedInState extends State<_SignedIn> {
+class _SignedInState extends State<_SignedIn> with WidgetsBindingObserver {
   late final Store store = Store(widget.uid);
 
   @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  // Coming back to the app: add any recurring spending that is now due.
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed && store.ready) store.runRecurring();
+  }
+
+  @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
     store.dispose();
     super.dispose();
   }

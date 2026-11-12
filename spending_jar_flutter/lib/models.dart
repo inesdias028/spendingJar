@@ -64,6 +64,89 @@ class Expense {
       };
 }
 
+/// A spending that repeats every week, month or year.
+class Recurring {
+  final String id;
+  final String name;
+  final double amount;
+  final String category;
+  final String emoji;
+  final String label;
+  final Period freq;
+
+  /// Day of the month it started on, so "31st" stays the last day in short months.
+  final int anchorDay;
+
+  /// The next date it will be added.
+  final DateTime next;
+
+  const Recurring({
+    required this.id,
+    required this.name,
+    required this.amount,
+    required this.category,
+    required this.emoji,
+    required this.label,
+    required this.freq,
+    required this.anchorDay,
+    required this.next,
+  });
+
+  Recurring copyWith({DateTime? next}) => Recurring(
+        id: id,
+        name: name,
+        amount: amount,
+        category: category,
+        emoji: emoji,
+        label: label,
+        freq: freq,
+        anchorDay: anchorDay,
+        next: next ?? this.next,
+      );
+
+  /// The date after [from] for this frequency.
+  DateTime after(DateTime from) {
+    switch (freq) {
+      case Period.week:
+        return DateTime(from.year, from.month, from.day + 7);
+      case Period.month:
+        return _clampDay(from.year, from.month + 1, anchorDay);
+      case Period.year:
+        return _clampDay(from.year + 1, from.month, anchorDay);
+    }
+  }
+
+  static DateTime _clampDay(int y, int m, int d) {
+    final first = DateTime(y, m, 1);
+    final last = DateTime(first.year, first.month + 1, 0).day;
+    return DateTime(first.year, first.month, d > last ? last : d);
+  }
+
+  factory Recurring.fromJson(Map<String, dynamic> j) => Recurring(
+        id: j['id'] as String,
+        name: (j['name'] as String?) ?? '',
+        amount: (j['amount'] as num).toDouble(),
+        category: (j['category'] as String?) ?? 'other',
+        emoji: (j['emoji'] as String?) ?? '🏷️',
+        label: (j['label'] as String?) ?? 'Other',
+        freq: Period.values.firstWhere((p) => p.name == j['freq'], orElse: () => Period.month),
+        anchorDay: (j['anchorDay'] as num?)?.toInt() ?? 1,
+        next: DateTime.parse(j['next'] as String),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'name': name,
+        'amount': amount,
+        'category': category,
+        'emoji': emoji,
+        'label': label,
+        'freq': freq.name,
+        'anchorDay': anchorDay,
+        'next': '${next.year.toString().padLeft(4, '0')}-${two(next.month)}-${two(next.day)}',
+      };
+}
+
 const defaultCategories = <Category>[
   Category(key: 'food', label: 'Food', emoji: '🍔'),
   Category(key: 'coffee', label: 'Coffee', emoji: '☕'),
@@ -98,6 +181,10 @@ class Store extends ChangeNotifier {
 
   /// Which period the jar on the main screen tracks.
   Period jarPeriod = Period.week;
+
+  /// Spending that is added automatically on a schedule.
+  List<Recurring> recurring = [];
+  bool _ranRecurring = false;
   List<Expense> expenses = [];
   List<Category> categories = List.of(defaultCategories);
 
@@ -138,6 +225,11 @@ class Store extends ChangeNotifier {
           };
         }
         jarPeriod = Period.values.firstWhere((p) => p.name == m['jarPeriod'], orElse: () => Period.week);
+        if (m['recurring'] is List) {
+          recurring = (m['recurring'] as List)
+              .map((r) => Recurring.fromJson(Map<String, dynamic>.from(r as Map)))
+              .toList();
+        }
         if (m['categories'] is List) {
           categories = (m['categories'] as List)
               .map((c) => Category.fromJson(Map<String, dynamic>.from(c as Map)))
@@ -159,6 +251,10 @@ class Store extends ChangeNotifier {
   void _maybeReady() {
     if (_gotUser && _gotExpenses) ready = true;
     notifyListeners();
+    if (ready && !_ranRecurring) {
+      _ranRecurring = true;
+      runRecurring();
+    }
   }
 
   void _fail(Object e) {
@@ -198,6 +294,7 @@ class Store extends ChangeNotifier {
     await _userDoc.set({
       'budgets': {'week': b, 'month': null, 'year': null},
       'jarPeriod': 'week',
+      'recurring': [],
       'categories': cats.map((c) => c.toJson()).toList(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
@@ -215,6 +312,7 @@ class Store extends ChangeNotifier {
   Future<void> _saveSettings() => _userDoc.update({
         'budgets': {for (final p in Period.values) p.name: budgets[p]},
         'jarPeriod': jarPeriod.name,
+        'recurring': recurring.map((r) => r.toJson()).toList(),
         'categories': categories.map((c) => c.toJson()).toList(),
         'updatedAt': FieldValue.serverTimestamp(),
       }).catchError(_fail);
@@ -289,6 +387,72 @@ class Store extends ChangeNotifier {
 
   void setBudgets(Map<Period, double?> value) {
     budgets = Map.of(value);
+    notifyListeners();
+    _saveSettings();
+  }
+
+  /// Adds any recurring spending that has come due (up to today).
+  /// Safe to run on several devices: each date gets one fixed id.
+  Future<void> runRecurring() async {
+    final today = dayStart(DateTime.now());
+    var changed = false;
+    final updated = <Recurring>[];
+    for (final r in recurring) {
+      var item = r;
+      var guard = 0;
+      while (!item.next.isAfter(today) && guard < 500) {
+        final d = item.next;
+        final id = 'r_${item.id}_${d.year}${two(d.month)}${two(d.day)}';
+        final e = Expense(
+          id: id,
+          amount: item.amount,
+          category: item.category,
+          emoji: item.emoji,
+          label: item.name.isEmpty ? item.label : item.name,
+          date: DateTime(d.year, d.month, d.day, 9),
+        );
+        _expCol.doc(id).set(e.toJson()..remove('id')).catchError(_fail);
+        item = item.copyWith(next: item.after(d));
+        changed = true;
+        guard++;
+      }
+      updated.add(item);
+    }
+    if (changed) {
+      recurring = updated;
+      notifyListeners();
+      await _saveSettings();
+    }
+  }
+
+  void addRecurring({
+    required String name,
+    required double amount,
+    required Category category,
+    required Period freq,
+    required DateTime start,
+  }) {
+    final s = dayStart(start);
+    recurring = [
+      ...recurring,
+      Recurring(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        name: name.trim(),
+        amount: amount,
+        category: category.key,
+        emoji: category.emoji,
+        label: category.label,
+        freq: freq,
+        anchorDay: s.day,
+        next: s,
+      ),
+    ];
+    notifyListeners();
+    _saveSettings().then((_) => runRecurring());
+  }
+
+  void deleteRecurring(String id) {
+    recurring = recurring.where((r) => r.id != id).toList();
     notifyListeners();
     _saveSettings();
   }
