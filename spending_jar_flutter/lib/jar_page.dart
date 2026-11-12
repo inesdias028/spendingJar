@@ -1,3 +1,4 @@
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
@@ -28,25 +29,12 @@ class _JarPageState extends State<JarPage> {
   void _toast(String msg) {
     ScaffoldMessenger.of(context)
       ..hideCurrentSnackBar()
-      ..showSnackBar(SnackBar(content: Text(msg), behavior: SnackBarBehavior.floating));
-  }
-
-  Future<bool> _confirm(String text, {String ok = 'Delete', bool danger = true}) async {
-    final res = await showDialog<bool>(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        content: Text(text, style: const TextStyle(fontSize: 16)),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
-          FilledButton(
-            style: FilledButton.styleFrom(backgroundColor: danger ? AppColors.red : AppColors.blue),
-            onPressed: () => Navigator.pop(ctx, true),
-            child: Text(ok),
-          ),
-        ],
-      ),
-    );
-    return res ?? false;
+      ..showSnackBar(SnackBar(
+        content: Text(msg),
+        behavior: SnackBarBehavior.floating,
+        backgroundColor: const Color(0xEE1C1C1E),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      ));
   }
 
   void _add(Category c) {
@@ -62,164 +50,38 @@ class _JarPageState extends State<JarPage> {
     _amountFocus.unfocus();
   }
 
-  Future<void> _editBudgets() async {
-    final ctrls = {
-      for (final p in Period.values)
-        p: TextEditingController(
-            text: store.isSet(p) ? store.budgets[p]!.toStringAsFixed(2).replaceAll('.', ',') : ''),
-    };
-    final errors = <Period, String?>{};
-    final result = await showDialog<Map<Period, double?>>(
+  void _categoryMenu(Category c) {
+    HapticFeedback.mediumImpact();
+    showCupertinoModalPopup<void>(
       context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) {
-          void save() {
-            final out = <Period, double?>{};
-            errors.clear();
-            for (final p in Period.values) {
-              final t = ctrls[p]!.text.trim();
-              if (t.isEmpty) {
-                out[p] = null;
-              } else {
-                final v = parseAmount(t);
-                if (v == null) errors[p] = 'Enter an amount, like 400 or 12,50';
-                out[p] = v;
-              }
-            }
-            if (errors.isNotEmpty) {
-              setLocal(() {});
-              return;
-            }
-            Navigator.pop(ctx, out);
-          }
-
-          return AlertDialog(
-            title: const Text('Budgets'),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Set a goal for any period. Leave one empty and it is worked out from the others.',
-                    style: TextStyle(color: AppColors.muted, fontSize: 13),
-                  ),
-                  const SizedBox(height: 14),
-                  for (final p in Period.values) ...[
-                    TextField(
-                      controller: ctrls[p],
-                      keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      decoration: InputDecoration(
-                        labelText: 'Per ${p.word}',
-                        prefixText: '€ ',
-                        hintText: 'Auto (${euro(store.estimateFor(p))})',
-                        errorText: errors[p],
-                        border: const OutlineInputBorder(),
-                      ),
-                      onChanged: (_) {
-                        if (errors[p] != null) setLocal(() => errors.remove(p));
-                      },
-                      onSubmitted: (_) => save(),
-                    ),
-                    const SizedBox(height: 12),
-                  ],
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-              FilledButton(onPressed: save, child: const Text('Save')),
-            ],
-          );
-        },
+      builder: (ctx) => CupertinoActionSheet(
+        title: Text('${c.emoji}  ${c.label}'),
+        message: const Text('Past spending in this category stays in your list.'),
+        actions: [
+          CupertinoActionSheetAction(
+            isDestructiveAction: true,
+            onPressed: () {
+              Navigator.pop(ctx);
+              store.deleteCategory(c.key);
+            },
+            child: const Text('Delete category'),
+          ),
+        ],
+        cancelButton: CupertinoActionSheetAction(
+          isDefaultAction: true,
+          onPressed: () => Navigator.pop(ctx),
+          child: const Text('Cancel'),
+        ),
       ),
     );
-    if (result != null) store.setBudgets(result);
   }
 
-  Future<void> _newCategory() async {
-    final emoji = TextEditingController();
-    final name = TextEditingController();
-    String? error;
-    await showDialog<void>(
-      context: context,
-      builder: (ctx) => StatefulBuilder(
-        builder: (ctx, setLocal) {
-          void save() {
-            final err = store.addCategory(name.text, emoji.text);
-            if (err != null) {
-              setLocal(() => error = err);
-            } else {
-              Navigator.pop(ctx);
-            }
-          }
+  void _editBudgets() {
+    showCupertinoModalPopup<void>(context: context, builder: (_) => _BudgetsSheet(store: store));
+  }
 
-          return AlertDialog(
-            title: const Text('New category', textAlign: TextAlign.center),
-            content: SingleChildScrollView(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [
-                  SizedBox(
-                    width: 90,
-                    child: TextField(
-                      controller: emoji,
-                      textAlign: TextAlign.center,
-                      style: const TextStyle(fontSize: 30),
-                      decoration: const InputDecoration(hintText: '🏷️', border: OutlineInputBorder()),
-                    ),
-                  ),
-                  const SizedBox(height: 12),
-                  Wrap(
-                    spacing: 6,
-                    runSpacing: 6,
-                    alignment: WrapAlignment.center,
-                    children: [
-                      for (final e in suggestedEmojis)
-                        InkWell(
-                          borderRadius: BorderRadius.circular(8),
-                          onTap: () => setLocal(() => emoji.text = e),
-                          child: Container(
-                            width: 42,
-                            height: 42,
-                            alignment: Alignment.center,
-                            decoration: BoxDecoration(
-                              color: const Color(0xFFF4F0EA),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: Text(e, style: const TextStyle(fontSize: 22)),
-                          ),
-                        ),
-                    ],
-                  ),
-                  const SizedBox(height: 12),
-                  TextField(
-                    controller: name,
-                    autofocus: true,
-                    maxLength: 14,
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: InputDecoration(
-                      hintText: 'Gym',
-                      border: const OutlineInputBorder(),
-                      errorText: error,
-                      counterText: '',
-                    ),
-                    onChanged: (_) {
-                      if (error != null) setLocal(() => error = null);
-                    },
-                    onSubmitted: (_) => save(),
-                  ),
-                ],
-              ),
-            ),
-            actions: [
-              TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
-              FilledButton(onPressed: save, child: const Text('Add')),
-            ],
-          );
-        },
-      ),
-    );
+  void _newCategory() {
+    showCupertinoModalPopup<void>(context: context, builder: (_) => _NewCategorySheet(store: store));
   }
 
   @override
@@ -229,159 +91,160 @@ class _JarPageState extends State<JarPage> {
       builder: (context, _) {
         final period = store.jarPeriod;
         final r = rangeFor(period, 0);
-        final week = store.between(r.start, r.end);
-        final spent = week.fold<double>(0, (s, e) => s + e.amount);
+        final items = store.between(r.start, r.end);
+        final spent = items.fold<double>(0, (s, e) => s + e.amount);
         final budget = store.budgetFor(period, r.days);
         final left = budget - spent;
         final fill = budget > 0 ? (left / budget).clamp(0.0, 1.0) : 0.0;
-        final jarColor = fill > 0.5 ? AppColors.green : (fill > 0.2 ? AppColors.orange : AppColors.red);
+        final color = fill > 0.5 ? AppColors.green : (fill > 0.2 ? AppColors.orange : AppColors.red);
 
         return SafeArea(
+          bottom: false,
           child: GestureDetector(
             onTap: () => FocusScope.of(context).unfocus(),
+            behavior: HitTestBehavior.translucent,
             child: ListView(
-              padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
               children: [
-                // ---- Which period the jar tracks ----
-                SegmentedButton<Period>(
-                  showSelectedIcon: false,
-                  segments: const [
-                    ButtonSegment(value: Period.week, label: Text('Week')),
-                    ButtonSegment(value: Period.month, label: Text('Month')),
-                    ButtonSegment(value: Period.year, label: Text('Year')),
-                  ],
-                  selected: {period},
-                  onSelectionChanged: (sel) => store.setJarPeriod(sel.first),
-                ),
-                const SizedBox(height: 18),
+                const LargeTitle('Spending Jar'),
 
-                // ---- Jar + summary ----
-                Row(
-                  children: [
-                    JarGraphic(fill: fill, color: jarColor),
-                    const SizedBox(width: 20),
-                    Expanded(
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Left this ${period.word}', style: const TextStyle(color: AppColors.muted, fontSize: 14)),
-                          FittedBox(
-                            fit: BoxFit.scaleDown,
-                            alignment: Alignment.centerLeft,
-                            child: Text(
-                              euro(left),
-                              style: TextStyle(
-                                fontSize: 36,
-                                fontWeight: FontWeight.w700,
-                                color: left < 0 ? AppColors.red : AppColors.text,
+                SizedBox(
+                  width: double.infinity,
+                  child: CupertinoSlidingSegmentedControl<Period>(
+                    groupValue: period,
+                    children: const {
+                      Period.week: Padding(padding: EdgeInsets.symmetric(vertical: 6), child: Text('Week')),
+                      Period.month: Padding(padding: EdgeInsets.symmetric(vertical: 6), child: Text('Month')),
+                      Period.year: Padding(padding: EdgeInsets.symmetric(vertical: 6), child: Text('Year')),
+                    },
+                    onValueChanged: (p) {
+                      if (p != null) store.setJarPeriod(p);
+                    },
+                  ),
+                ),
+                const SizedBox(height: 14),
+
+                // ---- Battery + summary ----
+                InsetCard(
+                  padding: const EdgeInsets.all(18),
+                  child: Row(
+                    children: [
+                      JarGraphic(fill: fill, color: color),
+                      const SizedBox(width: 20),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text('Left this ${period.word}',
+                                style: const TextStyle(color: AppColors.muted, fontSize: 15)),
+                            FittedBox(
+                              fit: BoxFit.scaleDown,
+                              alignment: Alignment.centerLeft,
+                              child: Text(
+                                euro(left),
+                                style: TextStyle(
+                                  fontSize: 38,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -1,
+                                  color: left < 0 ? AppColors.red : AppColors.text,
+                                ),
                               ),
                             ),
-                          ),
-                          Text('Spent ${euro(spent)}', style: const TextStyle(color: AppColors.muted, fontSize: 13)),
-                          TextButton.icon(
-                            style: TextButton.styleFrom(
-                              padding: EdgeInsets.zero,
-                              foregroundColor: AppColors.blue,
-                              tapTargetSize: MaterialTapTargetSize.padded,
+                            Text('Spent ${euro(spent)}',
+                                style: const TextStyle(color: AppColors.muted, fontSize: 15)),
+                            const SizedBox(height: 10),
+                            GestureDetector(
+                              onTap: _editBudgets,
+                              child: Row(
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  Flexible(
+                                    child: Text(
+                                      'Budget ${euro(budget)} / ${period.word}${store.isSet(period) ? '' : ' (auto)'}',
+                                      style: const TextStyle(color: AppColors.blue, fontSize: 15),
+                                    ),
+                                  ),
+                                  const Icon(CupertinoIcons.chevron_right, size: 15, color: AppColors.blue),
+                                ],
+                              ),
                             ),
-                            onPressed: _editBudgets,
-                            icon: const Icon(Icons.edit, size: 16),
-                            label: Text('Budget ${euro(budget)} / ${period.word}${store.isSet(period) ? '' : ' (auto)'}'),
-                          ),
-                        ],
+                          ],
+                        ),
                       ),
-                    ),
-                  ],
+                    ],
+                  ),
                 ),
-                const SizedBox(height: 20),
+                const SizedBox(height: 14),
 
                 // ---- Amount ----
-                TextField(
+                CupertinoTextField(
                   controller: _amount,
                   focusNode: _amountFocus,
                   keyboardType: const TextInputType.numberWithOptions(decimal: true),
                   inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
                   textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 32, fontWeight: FontWeight.w600),
-                  decoration: InputDecoration(
-                    hintText: '€ 0,00',
-                    hintStyle: const TextStyle(color: Color(0xFFAAAAAA)),
-                    filled: true,
-                    fillColor: AppColors.card,
-                    contentPadding: const EdgeInsets.symmetric(vertical: 16),
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(16),
-                      borderSide: BorderSide.none,
-                    ),
-                  ),
+                  placeholder: '€ 0,00',
+                  placeholderStyle: const TextStyle(color: Color(0xFFC7C7CC), fontSize: 34, fontWeight: FontWeight.w600),
+                  style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w600, color: AppColors.text),
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(12)),
                 ),
-                const SizedBox(height: 12),
 
                 // ---- Categories ----
+                const GroupHeader('Tap a category to add'),
                 GridView.count(
                   crossAxisCount: 3,
                   shrinkWrap: true,
+                  padding: EdgeInsets.zero,
                   physics: const NeverScrollableScrollPhysics(),
                   mainAxisSpacing: 10,
                   crossAxisSpacing: 10,
-                  childAspectRatio: 1.25,
+                  childAspectRatio: 1.2,
                   children: [
                     for (final c in store.categories)
                       CategoryTile(
                         emoji: c.emoji,
                         label: c.label,
                         onTap: () => _add(c),
-                        onLongPress: () async {
-                          HapticFeedback.mediumImpact();
-                          if (await _confirm('Delete category ${c.emoji} ${c.label}?')) {
-                            store.deleteCategory(c.key);
-                          }
-                        },
+                        onLongPress: () => _categoryMenu(c),
                       ),
-                    CategoryTile(emoji: '＋', label: 'New', dashed: true, onTap: _newCategory),
+                    CategoryTile(emoji: '', label: 'New', isNew: true, onTap: _newCategory),
                   ],
                 ),
 
-                // ---- This week ----
-                const SizedBox(height: 22),
-                Text('This ${period.word}', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 8),
-                if (week.isEmpty)
-                  const Padding(
-                    padding: EdgeInsets.symmetric(vertical: 20),
+                // ---- This period ----
+                GroupHeader('This ${period.word}'),
+                if (items.isEmpty)
+                  const InsetCard(
+                    padding: EdgeInsets.symmetric(vertical: 22),
                     child: Center(
-                      child: Text('Nothing yet — your jar is full 🎉', style: TextStyle(color: Color(0xFF999999))),
+                      child: Text('Nothing yet. Your battery is full.',
+                          style: TextStyle(color: AppColors.muted, fontSize: 15)),
                     ),
                   )
                 else
-                  for (final e in week)
-                    Padding(
-                      padding: const EdgeInsets.only(bottom: 8),
-                      child: Material(
-                        color: AppColors.card,
-                        borderRadius: BorderRadius.circular(12),
-                        clipBehavior: Clip.antiAlias,
-                        child: ListTile(
-                          leading: Text(store.categoryFor(e).emoji, style: const TextStyle(fontSize: 24)),
-                          title: Text(store.categoryFor(e).label),
-                          subtitle: Text(shortDateTime(e.date)),
-                          trailing: Text(euro(e.amount),
-                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600)),
-                          onLongPress: () async {
-                            HapticFeedback.mediumImpact();
-                            if (await _confirm('Delete ${euro(e.amount)}?')) store.deleteExpense(e.id);
-                          },
-                        ),
-                      ),
+                  InsetCard(
+                    child: Column(
+                      children: [
+                        for (var i = 0; i < items.length; i++) ...[
+                          if (i > 0) const RowDivider(indent: 62),
+                          _ExpenseRow(
+                            key: ValueKey(items[i].id),
+                            expense: items[i],
+                            category: store.categoryFor(items[i]),
+                            onDelete: () => store.deleteExpense(items[i].id),
+                          ),
+                        ],
+                      ],
                     ),
+                  ),
                 const Padding(
-                  padding: EdgeInsets.only(top: 8),
-                  child: Center(
-                    child: Text('Long-press an item or category to delete it',
-                        style: TextStyle(fontSize: 12, color: Color(0xFFAAAAAA))),
+                  padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Text(
+                    'Swipe left on an entry to delete it. Hold a category to remove it.',
+                    style: TextStyle(fontSize: 13, color: AppColors.muted),
                   ),
                 ),
-
               ],
             ),
           ),
@@ -389,63 +252,347 @@ class _JarPageState extends State<JarPage> {
       },
     );
   }
-
 }
 
 // ---------------------------------------------------------------------------
-// Widgets
+// Rows and tiles
 // ---------------------------------------------------------------------------
 
-class CategoryTile extends StatelessWidget {
-  const CategoryTile({
-    super.key,
-    required this.emoji,
-    required this.label,
-    required this.onTap,
-    this.onLongPress,
-    this.dashed = false,
-  });
-
-  final String emoji;
-  final String label;
-  final VoidCallback onTap;
-  final VoidCallback? onLongPress;
-  final bool dashed;
+class _ExpenseRow extends StatelessWidget {
+  const _ExpenseRow({super.key, required this.expense, required this.category, required this.onDelete});
+  final Expense expense;
+  final Category category;
+  final VoidCallback onDelete;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      color: dashed ? Colors.transparent : AppColors.card,
-      elevation: dashed ? 0 : 1,
-      shadowColor: const Color(0x22000000),
-      shape: RoundedRectangleBorder(
-        borderRadius: BorderRadius.circular(16),
-        side: dashed ? const BorderSide(color: Color(0xFFC9C1B5), width: 2) : BorderSide.none,
+    return Dismissible(
+      key: ValueKey('d-${expense.id}'),
+      direction: DismissDirection.endToStart,
+      background: Container(
+        color: AppColors.red,
+        alignment: Alignment.centerRight,
+        padding: const EdgeInsets.only(right: 20),
+        child: const Text('Delete', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
       ),
-      clipBehavior: Clip.antiAlias,
-      child: InkWell(
-        onTap: onTap,
-        onLongPress: onLongPress,
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
+      confirmDismiss: (_) => confirmIos(context, 'Delete ${euro(expense.amount)}?'),
+      onDismissed: (_) {
+        HapticFeedback.mediumImpact();
+        onDelete();
+      },
+      child: Container(
+        color: AppColors.card,
+        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+        child: Row(
           children: [
-            Text(emoji, style: TextStyle(fontSize: 28, color: dashed ? const Color(0xFF888877) : null)),
-            const SizedBox(height: 2),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 4),
-              child: Text(
-                label,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 13, color: dashed ? const Color(0xFF888877) : const Color(0xFF444444)),
+            Container(
+              width: 36,
+              height: 36,
+              alignment: Alignment.center,
+              decoration: const BoxDecoration(color: AppColors.background, shape: BoxShape.circle),
+              child: Text(category.emoji, style: const TextStyle(fontSize: 19)),
+            ),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(category.label, style: const TextStyle(fontSize: 17)),
+                  Text(shortDateTime(expense.date), style: const TextStyle(fontSize: 13, color: AppColors.muted)),
+                ],
               ),
             ),
+            Text(euro(expense.amount), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
           ],
         ),
       ),
     );
   }
 }
+
+class CategoryTile extends StatefulWidget {
+  const CategoryTile({
+    super.key,
+    required this.emoji,
+    required this.label,
+    required this.onTap,
+    this.onLongPress,
+    this.isNew = false,
+  });
+
+  final String emoji;
+  final String label;
+  final VoidCallback onTap;
+  final VoidCallback? onLongPress;
+  final bool isNew;
+
+  @override
+  State<CategoryTile> createState() => _CategoryTileState();
+}
+
+class _CategoryTileState extends State<CategoryTile> {
+  bool _down = false;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTapDown: (_) => setState(() => _down = true),
+      onTapUp: (_) => setState(() => _down = false),
+      onTapCancel: () => setState(() => _down = false),
+      onTap: widget.onTap,
+      onLongPress: widget.onLongPress == null
+          ? null
+          : () {
+              setState(() => _down = false);
+              widget.onLongPress!();
+            },
+      child: AnimatedScale(
+        scale: _down ? 0.95 : 1,
+        duration: const Duration(milliseconds: 100),
+        child: AnimatedContainer(
+          duration: const Duration(milliseconds: 100),
+          decoration: BoxDecoration(
+            color: _down ? const Color(0xFFE9E9EE) : AppColors.card,
+            borderRadius: BorderRadius.circular(14),
+          ),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              if (widget.isNew)
+                const Icon(CupertinoIcons.add_circled, size: 30, color: AppColors.blue)
+              else
+                Text(widget.emoji, style: const TextStyle(fontSize: 30)),
+              const SizedBox(height: 4),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 4),
+                child: Text(
+                  widget.label,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 13, color: widget.isNew ? AppColors.blue : const Color(0xFF3C3C43)),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Sheets
+// ---------------------------------------------------------------------------
+
+class _BudgetsSheet extends StatefulWidget {
+  const _BudgetsSheet({required this.store});
+  final Store store;
+
+  @override
+  State<_BudgetsSheet> createState() => _BudgetsSheetState();
+}
+
+class _BudgetsSheetState extends State<_BudgetsSheet> {
+  late final Map<Period, TextEditingController> _ctrls = {
+    for (final p in Period.values)
+      p: TextEditingController(
+        text: widget.store.isSet(p) ? widget.store.budgets[p]!.toStringAsFixed(2).replaceAll('.', ',') : '',
+      ),
+  };
+  String? _error;
+
+  @override
+  void dispose() {
+    for (final c in _ctrls.values) {
+      c.dispose();
+    }
+    super.dispose();
+  }
+
+  void _save() {
+    final out = <Period, double?>{};
+    for (final p in Period.values) {
+      final t = _ctrls[p]!.text.trim();
+      if (t.isEmpty) {
+        out[p] = null;
+        continue;
+      }
+      final v = parseAmount(t);
+      if (v == null) {
+        setState(() => _error = 'The ${p.word} budget should be an amount, like 400 or 12,50.');
+        return;
+      }
+      out[p] = v;
+    }
+    widget.store.setBudgets(out);
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IosSheet(
+      title: 'Budgets',
+      doneLabel: 'Save',
+      onDone: _save,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InsetCard(
+            child: Column(
+              children: [
+                for (final p in Period.values) ...[
+                  if (p != Period.week) const RowDivider(),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+                    child: Row(
+                      children: [
+                        SizedBox(width: 110, child: Text('Per ${p.word}', style: const TextStyle(fontSize: 17))),
+                        Expanded(
+                          child: CupertinoTextField(
+                            controller: _ctrls[p],
+                            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                            textAlign: TextAlign.right,
+                            placeholder: 'Auto (${euro(widget.store.estimateFor(p))})',
+                            prefix: const Text('€', style: TextStyle(color: AppColors.muted, fontSize: 17)),
+                            decoration: null,
+                            padding: const EdgeInsets.symmetric(vertical: 12),
+                            clearButtonMode: OverlayVisibilityMode.editing,
+                            onChanged: (_) {
+                              if (_error != null) setState(() => _error = null);
+                            },
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text(
+              _error ?? 'Set a goal for any period. Leave one empty and it is worked out from the others.',
+              style: TextStyle(fontSize: 13, color: _error != null ? AppColors.red : AppColors.muted),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _NewCategorySheet extends StatefulWidget {
+  const _NewCategorySheet({required this.store});
+  final Store store;
+
+  @override
+  State<_NewCategorySheet> createState() => _NewCategorySheetState();
+}
+
+class _NewCategorySheetState extends State<_NewCategorySheet> {
+  final _emoji = TextEditingController();
+  final _name = TextEditingController();
+  String? _error;
+
+  @override
+  void dispose() {
+    _emoji.dispose();
+    _name.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final err = widget.store.addCategory(_name.text, _emoji.text);
+    if (err != null) {
+      setState(() => _error = err);
+      return;
+    }
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IosSheet(
+      title: 'New Category',
+      doneLabel: 'Add',
+      onDone: _save,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InsetCard(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: CupertinoTextField(
+                    controller: _emoji,
+                    placeholder: 'Emoji 🏷️',
+                    decoration: null,
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    style: const TextStyle(fontSize: 17),
+                  ),
+                ),
+                const RowDivider(),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: CupertinoTextField(
+                    controller: _name,
+                    autofocus: true,
+                    placeholder: 'Name, like Gym',
+                    maxLength: 14,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: null,
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    style: const TextStyle(fontSize: 17),
+                    onChanged: (_) {
+                      if (_error != null) setState(() => _error = null);
+                    },
+                    onSubmitted: (_) => _save(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Text(_error!, style: const TextStyle(fontSize: 13, color: AppColors.red)),
+            ),
+          const GroupHeader('Suggestions'),
+          InsetCard(
+            padding: const EdgeInsets.all(10),
+            child: Wrap(
+              spacing: 6,
+              runSpacing: 6,
+              alignment: WrapAlignment.center,
+              children: [
+                for (final e in suggestedEmojis)
+                  GestureDetector(
+                    onTap: () => setState(() => _emoji.text = e),
+                    child: Container(
+                      width: 44,
+                      height: 44,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: _emoji.text == e ? const Color(0xFFD9E9FF) : AppColors.background,
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Text(e, style: const TextStyle(fontSize: 24)),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Battery
+// ---------------------------------------------------------------------------
 
 /// A battery that empties as you spend. [fill] is 0..1.
 class JarGraphic extends StatelessWidget {
@@ -466,16 +613,14 @@ class JarGraphic extends StatelessWidget {
       height: h,
       child: Column(
         children: [
-          // Terminal on top
           Container(
             width: capW,
             height: capH,
             decoration: const BoxDecoration(
-              color: Color(0xFF333333),
+              color: Color(0xFF3A3A3C),
               borderRadius: BorderRadius.vertical(top: Radius.circular(4)),
             ),
           ),
-          // Body
           Container(
             width: w,
             height: bodyH,
@@ -483,7 +628,7 @@ class JarGraphic extends StatelessWidget {
             decoration: BoxDecoration(
               color: Colors.white,
               borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFF333333), width: border),
+              border: Border.all(color: const Color(0xFF3A3A3C), width: border),
             ),
             child: Stack(
               alignment: Alignment.bottomCenter,
@@ -493,10 +638,7 @@ class JarGraphic extends StatelessWidget {
                   curve: Curves.easeOut,
                   height: innerH * fill,
                   width: double.infinity,
-                  decoration: BoxDecoration(
-                    color: color,
-                    borderRadius: BorderRadius.circular(9),
-                  ),
+                  decoration: BoxDecoration(color: color, borderRadius: BorderRadius.circular(9)),
                 ),
                 Positioned.fill(
                   child: Center(
@@ -505,7 +647,7 @@ class JarGraphic extends StatelessWidget {
                       style: TextStyle(
                         fontSize: 17,
                         fontWeight: FontWeight.w700,
-                        color: fill > 0.55 ? Colors.white : const Color(0xFF333333),
+                        color: fill > 0.55 ? Colors.white : const Color(0xFF3A3A3C),
                       ),
                     ),
                   ),

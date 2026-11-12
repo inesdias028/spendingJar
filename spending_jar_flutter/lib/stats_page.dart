@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
 import 'main.dart';
@@ -48,7 +49,6 @@ class _StatsPageState extends State<StatsPage> {
                 .fold<double>(0, (s, e) => s + e.amount),
         ];
 
-        // Group by category
         final groups = <String, _Group>{};
         for (final e in items) {
           final c = store.categoryFor(e);
@@ -59,45 +59,53 @@ class _StatsPageState extends State<StatsPage> {
         final rows = groups.values.toList()..sort((a, b) => b.total.compareTo(a.total));
 
         return SafeArea(
+          bottom: false,
           child: ListView(
-            padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
             children: [
-              SegmentedButton<Period>(
-                showSelectedIcon: false,
-                segments: const [
-                  ButtonSegment(value: Period.week, label: Text('Week')),
-                  ButtonSegment(value: Period.month, label: Text('Month')),
-                  ButtonSegment(value: Period.year, label: Text('Year')),
-                ],
-                selected: {_period},
-                onSelectionChanged: (s) => setState(() {
-                  _period = s.first;
-                  _offset = 0;
-                }),
+              const LargeTitle('Stats'),
+              SizedBox(
+                width: double.infinity,
+                child: CupertinoSlidingSegmentedControl<Period>(
+                  groupValue: _period,
+                  children: const {
+                    Period.week: Padding(padding: EdgeInsets.symmetric(vertical: 6), child: Text('Week')),
+                    Period.month: Padding(padding: EdgeInsets.symmetric(vertical: 6), child: Text('Month')),
+                    Period.year: Padding(padding: EdgeInsets.symmetric(vertical: 6), child: Text('Year')),
+                  },
+                  onValueChanged: (p) {
+                    if (p != null) {
+                      setState(() {
+                        _period = p;
+                        _offset = 0;
+                      });
+                    }
+                  },
+                ),
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 8),
 
               // Period navigation
               Row(
                 children: [
-                  IconButton.filledTonal(
+                  CupertinoButton(
+                    padding: const EdgeInsets.all(8),
                     onPressed: () => setState(() => _offset--),
-                    icon: const Icon(Icons.chevron_left),
-                    tooltip: 'Previous',
+                    child: const Icon(CupertinoIcons.chevron_left, size: 22),
                   ),
                   Expanded(
                     child: Text(r.label,
                         textAlign: TextAlign.center,
                         style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
                   ),
-                  IconButton.filledTonal(
+                  CupertinoButton(
+                    padding: const EdgeInsets.all(8),
                     onPressed: _offset < 0 ? () => setState(() => _offset++) : null,
-                    icon: const Icon(Icons.chevron_right),
-                    tooltip: 'Next',
+                    child: const Icon(CupertinoIcons.chevron_right, size: 22),
                   ),
                 ],
               ),
-              const SizedBox(height: 12),
+              const SizedBox(height: 6),
 
               // Totals
               Row(
@@ -107,43 +115,61 @@ class _StatsPageState extends State<StatsPage> {
                   Expanded(child: _StatCard(title: 'Per day', value: euro(total / elapsed))),
                 ],
               ),
-              const SizedBox(height: 14),
+              const SizedBox(height: 10),
 
-              // Budget bar
-              ClipRRect(
-                borderRadius: BorderRadius.circular(5),
-                child: LinearProgressIndicator(
-                  value: pct.clamp(0.0, 1.0),
-                  minHeight: 10,
-                  backgroundColor: AppColors.track,
-                  color: barColor,
+              // Budget
+              InsetCard(
+                padding: const EdgeInsets.all(16),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        Expanded(
+                          child: Text('${estimated ? 'Estimated budget' : 'Budget'} ${euro(periodBudget)}',
+                              style: const TextStyle(fontSize: 15, color: AppColors.muted)),
+                        ),
+                        Text('${(pct * 100).round()}%',
+                            style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600)),
+                      ],
+                    ),
+                    const SizedBox(height: 10),
+                    _Bar(value: pct, color: barColor, height: 8),
+                    const SizedBox(height: 8),
+                    Text(
+                      diff >= 0 ? '${euro(diff)} under budget' : '${euro(-diff)} over budget',
+                      style: TextStyle(
+                        fontSize: 15,
+                        fontWeight: FontWeight.w600,
+                        color: diff >= 0 ? AppColors.darkGreen : AppColors.red,
+                      ),
+                    ),
+                  ],
                 ),
               ),
-              const SizedBox(height: 6),
-              Text(
-                '${(pct * 100).round()}% of ${euro(periodBudget)}${estimated ? ' estimated' : ''} budget · '
-                '${diff >= 0 ? '${euro(diff)} under' : '${euro(-diff)} over'}',
-                style: const TextStyle(fontSize: 13, color: AppColors.muted),
-              ),
 
-              // Chart
-              const SizedBox(height: 22),
-              const Text('Over time', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 8),
+              const GroupHeader('Over time'),
               _BarChart(buckets: r.buckets, sums: sums),
 
-              // By category
-              const SizedBox(height: 22),
-              const Text('By category', style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700)),
-              const SizedBox(height: 8),
+              const GroupHeader('By category'),
               if (rows.isEmpty)
-                const Padding(
-                  padding: EdgeInsets.symmetric(vertical: 20),
+                const InsetCard(
+                  padding: EdgeInsets.symmetric(vertical: 22),
                   child: Center(
-                      child: Text('Nothing spent in this period', style: TextStyle(color: Color(0xFF999999)))),
+                    child: Text('Nothing spent in this period', style: TextStyle(color: AppColors.muted, fontSize: 15)),
+                  ),
                 )
               else
-                for (final g in rows) _CategoryRow(group: g, total: total, top: rows.first.total),
+                InsetCard(
+                  child: Column(
+                    children: [
+                      for (var i = 0; i < rows.length; i++) ...[
+                        if (i > 0) const RowDivider(indent: 62),
+                        _CategoryRow(group: rows[i], total: total, top: rows.first.total),
+                      ],
+                    ],
+                  ),
+                ),
             ],
           ),
         );
@@ -160,6 +186,30 @@ class _Group {
   int count = 0;
 }
 
+/// Simple rounded progress bar. [value] is 0..1 (anything above 1 shows full).
+class _Bar extends StatelessWidget {
+  const _Bar({required this.value, required this.color, this.height = 6});
+  final double value;
+  final Color color;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(height / 2),
+      child: Container(
+        height: height,
+        color: AppColors.track,
+        alignment: Alignment.centerLeft,
+        child: FractionallySizedBox(
+          widthFactor: value.clamp(0.0, 1.0),
+          child: Container(color: color),
+        ),
+      ),
+    );
+  }
+}
+
 class _StatCard extends StatelessWidget {
   const _StatCard({required this.title, required this.value});
   final String title;
@@ -167,17 +217,16 @@ class _StatCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(14)),
+    return InsetCard(
+      padding: const EdgeInsets.all(16),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(title, style: const TextStyle(color: Color(0xFF777777), fontSize: 14)),
+          Text(title, style: const TextStyle(color: AppColors.muted, fontSize: 15)),
           const SizedBox(height: 2),
           FittedBox(
             fit: BoxFit.scaleDown,
-            child: Text(value, style: const TextStyle(fontSize: 24, fontWeight: FontWeight.w700)),
+            child: Text(value, style: const TextStyle(fontSize: 26, fontWeight: FontWeight.w700, letterSpacing: -0.6)),
           ),
         ],
       ),
@@ -194,56 +243,57 @@ class _BarChart extends StatelessWidget {
   Widget build(BuildContext context) {
     final max = sums.fold<double>(0, math.max);
     final now = DateTime.now();
-    return Container(
-      height: 180,
-      padding: const EdgeInsets.fromLTRB(10, 12, 10, 8),
-      decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(14)),
-      child: max == 0
-          ? const Center(child: Text('No spending in this period', style: TextStyle(color: Color(0xFFAAAAAA))))
-          : Row(
-              crossAxisAlignment: CrossAxisAlignment.end,
-              children: [
-                for (var i = 0; i < buckets.length; i++)
-                  Expanded(
-                    child: Tooltip(
-                      message: euro(sums[i]),
-                      child: Padding(
-                        padding: EdgeInsets.symmetric(horizontal: buckets.length > 12 ? 1 : 3),
-                        child: Column(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: [
-                            Flexible(
-                              child: FractionallySizedBox(
-                                heightFactor: sums[i] == 0 ? 0.02 : sums[i] / max,
-                                child: Container(
-                                  constraints: const BoxConstraints(maxWidth: 28),
-                                  decoration: BoxDecoration(
-                                    color: sums[i] == 0
-                                        ? AppColors.track
-                                        : (!now.isBefore(buckets[i].start) && now.isBefore(buckets[i].end))
-                                            ? AppColors.blue
-                                            : AppColors.green,
-                                    borderRadius: const BorderRadius.vertical(top: Radius.circular(4)),
+    return InsetCard(
+      padding: const EdgeInsets.fromLTRB(12, 14, 12, 8),
+      child: SizedBox(
+        height: 170,
+        child: max == 0
+            ? const Center(child: Text('No spending in this period', style: TextStyle(color: AppColors.muted, fontSize: 15)))
+            : Row(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  for (var i = 0; i < buckets.length; i++)
+                    Expanded(
+                      child: Tooltip(
+                        message: euro(sums[i]),
+                        child: Padding(
+                          padding: EdgeInsets.symmetric(horizontal: buckets.length > 12 ? 1 : 3),
+                          child: Column(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: [
+                              Flexible(
+                                child: FractionallySizedBox(
+                                  heightFactor: sums[i] == 0 ? 0.02 : sums[i] / max,
+                                  child: Container(
+                                    constraints: const BoxConstraints(maxWidth: 26),
+                                    decoration: BoxDecoration(
+                                      color: sums[i] == 0
+                                          ? AppColors.track
+                                          : (!now.isBefore(buckets[i].start) && now.isBefore(buckets[i].end))
+                                              ? AppColors.blue
+                                              : AppColors.green,
+                                      borderRadius: BorderRadius.circular(4),
+                                    ),
                                   ),
                                 ),
                               ),
-                            ),
-                            const SizedBox(height: 4),
-                            SizedBox(
-                              height: 14,
-                              child: Text(buckets[i].label,
-                                  maxLines: 1,
-                                  overflow: TextOverflow.visible,
-                                  softWrap: false,
-                                  style: const TextStyle(fontSize: 11, color: Color(0xFF999999))),
-                            ),
-                          ],
+                              const SizedBox(height: 5),
+                              SizedBox(
+                                height: 14,
+                                child: Text(buckets[i].label,
+                                    maxLines: 1,
+                                    overflow: TextOverflow.visible,
+                                    softWrap: false,
+                                    style: const TextStyle(fontSize: 11, color: AppColors.muted)),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
-                  ),
-              ],
-            ),
+                ],
+              ),
+      ),
     );
   }
 }
@@ -256,40 +306,46 @@ class _CategoryRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 8),
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(12)),
-      child: Column(
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 11),
+      child: Row(
         children: [
-          Row(
-            children: [
-              Text(group.emoji, style: const TextStyle(fontSize: 22)),
-              const SizedBox(width: 10),
-              Expanded(
-                child: Text.rich(TextSpan(children: [
-                  TextSpan(text: group.label, style: const TextStyle(fontSize: 15)),
-                  TextSpan(
-                      text: ' · ${group.count}×',
-                      style: const TextStyle(fontSize: 13, color: AppColors.muted)),
-                ])),
-              ),
-              Text(euro(group.total), style: const TextStyle(fontWeight: FontWeight.w600)),
-              SizedBox(
-                width: 44,
-                child: Text('${(group.total / total * 100).round()}%',
-                    textAlign: TextAlign.right, style: const TextStyle(fontSize: 12, color: Color(0xFF999999))),
-              ),
-            ],
+          Container(
+            width: 36,
+            height: 36,
+            alignment: Alignment.center,
+            decoration: const BoxDecoration(color: AppColors.background, shape: BoxShape.circle),
+            child: Text(group.emoji, style: const TextStyle(fontSize: 19)),
           ),
-          const SizedBox(height: 8),
-          ClipRRect(
-            borderRadius: BorderRadius.circular(3),
-            child: LinearProgressIndicator(
-              value: top > 0 ? group.total / top : 0,
-              minHeight: 6,
-              backgroundColor: const Color(0xFFF1ECE4),
-              color: AppColors.orange,
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text.rich(TextSpan(children: [
+                        TextSpan(text: group.label, style: const TextStyle(fontSize: 17)),
+                        TextSpan(
+                            text: '  ${group.count}×', style: const TextStyle(fontSize: 13, color: AppColors.muted)),
+                      ])),
+                    ),
+                    Text(euro(group.total), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Expanded(child: _Bar(value: top > 0 ? group.total / top : 0, color: AppColors.orange)),
+                    SizedBox(
+                      width: 42,
+                      child: Text('${(group.total / total * 100).round()}%',
+                          textAlign: TextAlign.right, style: const TextStyle(fontSize: 13, color: AppColors.muted)),
+                    ),
+                  ],
+                ),
+              ],
             ),
           ),
         ],

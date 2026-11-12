@@ -1,7 +1,9 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 
+import 'jar_page.dart';
 import 'main.dart';
 
 /// Sign in / create account screen.
@@ -13,7 +15,6 @@ class AuthPage extends StatefulWidget {
 }
 
 class _AuthPageState extends State<AuthPage> {
-  final _form = GlobalKey<FormState>();
   final _email = TextEditingController();
   final _password = TextEditingController();
   bool _creating = false; // false = sign in, true = create account
@@ -49,9 +50,20 @@ class _AuthPageState extends State<AuthPage> {
   }
 
   Future<void> _submit() async {
-    if (!_form.currentState!.validate()) return;
     final email = _email.text.trim();
     final password = _password.text;
+    if (!email.contains('@')) {
+      setState(() => _error = 'Enter your email address.');
+      return;
+    }
+    if (password.isEmpty) {
+      setState(() => _error = 'Enter your password.');
+      return;
+    }
+    if (_creating && password.length < 6) {
+      setState(() => _error = 'Use at least 6 characters for your password.');
+      return;
+    }
     await _run(() async {
       if (_creating) {
         await _auth.createUserWithEmailAndPassword(email: email, password: password);
@@ -118,129 +130,139 @@ class _AuthPageState extends State<AuthPage> {
       body: SafeArea(
         child: Center(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: const EdgeInsets.fromLTRB(20, 24, 20, 24),
             child: ConstrainedBox(
-              constraints: const BoxConstraints(maxWidth: 400),
-              child: Form(
-                key: _form,
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    const Icon(Icons.savings, size: 72, color: AppColors.green),
-                    const SizedBox(height: 12),
-                    const Text('Spending Jar',
-                        textAlign: TextAlign.center,
-                        style: TextStyle(fontSize: 28, fontWeight: FontWeight.w700)),
-                    const SizedBox(height: 6),
-                    Text(
-                      _creating ? 'Create your account' : 'Sign in to see your jar',
+              constraints: const BoxConstraints(maxWidth: 420),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  const Center(child: JarGraphic(fill: 0.75, color: AppColors.green)),
+                  const SizedBox(height: 18),
+                  const Text('Spending Jar',
                       textAlign: TextAlign.center,
-                      style: const TextStyle(color: AppColors.muted, fontSize: 15),
-                    ),
-                    const SizedBox(height: 28),
+                      style: TextStyle(fontSize: 34, fontWeight: FontWeight.w700, letterSpacing: -0.8)),
+                  const SizedBox(height: 4),
+                  Text(
+                    _creating ? 'Create your account' : 'Sign in to see your battery',
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: AppColors.muted, fontSize: 17),
+                  ),
+                  const SizedBox(height: 28),
 
-                    TextFormField(
-                      controller: _email,
-                      keyboardType: TextInputType.emailAddress,
-                      autofillHints: const [AutofillHints.email],
-                      textInputAction: TextInputAction.next,
-                      decoration: _field('Email', Icons.mail_outline),
-                      validator: (v) =>
-                          (v == null || !v.trim().contains('@')) ? 'Enter your email address' : null,
-                    ),
-                    const SizedBox(height: 12),
-                    TextFormField(
-                      controller: _password,
-                      obscureText: !_showPassword,
-                      autofillHints: [_creating ? AutofillHints.newPassword : AutofillHints.password],
-                      textInputAction: TextInputAction.done,
-                      onFieldSubmitted: (_) => _submit(),
-                      decoration: _field('Password', Icons.lock_outline).copyWith(
-                        suffixIcon: IconButton(
-                          tooltip: _showPassword ? 'Hide password' : 'Show password',
-                          icon: Icon(_showPassword ? Icons.visibility_off : Icons.visibility),
-                          onPressed: () => setState(() => _showPassword = !_showPassword),
+                  InsetCard(
+                    child: Column(
+                      children: [
+                        CupertinoTextField(
+                          controller: _email,
+                          placeholder: 'Email',
+                          keyboardType: TextInputType.emailAddress,
+                          autofillHints: const [AutofillHints.email],
+                          autocorrect: false,
+                          textInputAction: TextInputAction.next,
+                          prefix: const Padding(
+                            padding: EdgeInsets.only(left: 14),
+                            child: Icon(CupertinoIcons.mail, color: AppColors.muted, size: 20),
+                          ),
+                          padding: const EdgeInsets.fromLTRB(10, 14, 14, 14),
+                          decoration: null,
+                          clearButtonMode: OverlayVisibilityMode.editing,
+                          onChanged: (_) => _clearMessages(),
                         ),
+                        const RowDivider(indent: 44),
+                        CupertinoTextField(
+                          controller: _password,
+                          placeholder: 'Password',
+                          obscureText: !_showPassword,
+                          autocorrect: false,
+                          autofillHints: [_creating ? AutofillHints.newPassword : AutofillHints.password],
+                          textInputAction: TextInputAction.done,
+                          onSubmitted: (_) => _submit(),
+                          prefix: const Padding(
+                            padding: EdgeInsets.only(left: 14),
+                            child: Icon(CupertinoIcons.lock, color: AppColors.muted, size: 20),
+                          ),
+                          suffix: CupertinoButton(
+                            padding: const EdgeInsets.symmetric(horizontal: 12),
+                            onPressed: () => setState(() => _showPassword = !_showPassword),
+                            child: Icon(_showPassword ? CupertinoIcons.eye_slash : CupertinoIcons.eye,
+                                size: 20, color: AppColors.muted),
+                          ),
+                          padding: const EdgeInsets.fromLTRB(10, 14, 4, 14),
+                          decoration: null,
+                          onChanged: (_) => _clearMessages(),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  if (!_creating)
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: CupertinoButton(
+                        padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 10),
+                        onPressed: _busy ? null : _forgotPassword,
+                        child: const Text('Forgot password?', style: TextStyle(fontSize: 15)),
                       ),
-                      validator: (v) {
-                        if (v == null || v.isEmpty) return 'Enter your password';
-                        if (_creating && v.length < 6) return 'Use at least 6 characters';
-                        return null;
-                      },
-                    ),
+                    )
+                  else
+                    const SizedBox(height: 14),
 
-                    if (!_creating)
-                      Align(
-                        alignment: Alignment.centerRight,
-                        child: TextButton(
-                          onPressed: _busy ? null : _forgotPassword,
-                          child: const Text('Forgot password?'),
-                        ),
-                      )
-                    else
-                      const SizedBox(height: 12),
+                  if (_error != null) _Notice(text: _error!, color: AppColors.red),
+                  if (_info != null) _Notice(text: _info!, color: AppColors.darkGreen),
 
-                    if (_error != null) _Notice(text: _error!, color: AppColors.red),
-                    if (_info != null) _Notice(text: _info!, color: AppColors.darkGreen),
+                  const SizedBox(height: 6),
+                  CupertinoButton.filled(
+                    borderRadius: BorderRadius.circular(12),
+                    padding: const EdgeInsets.symmetric(vertical: 15),
+                    onPressed: _busy ? null : _submit,
+                    child: _busy
+                        ? const CupertinoActivityIndicator(color: Colors.white)
+                        : Text(_creating ? 'Create Account' : 'Sign In',
+                            style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: Colors.white)),
+                  ),
 
-                    const SizedBox(height: 8),
-                    FilledButton(
-                      style: FilledButton.styleFrom(
-                        minimumSize: const Size.fromHeight(52),
-                        backgroundColor: AppColors.darkGreen,
-                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                        textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                  if (kIsWeb) ...[
+                    const SizedBox(height: 18),
+                    const Row(children: [
+                      Expanded(child: RowDivider(indent: 0)),
+                      Padding(
+                        padding: EdgeInsets.symmetric(horizontal: 12),
+                        child: Text('or', style: TextStyle(color: AppColors.muted, fontSize: 15)),
                       ),
-                      onPressed: _busy ? null : _submit,
-                      child: _busy
-                          ? const SizedBox(
-                              width: 22, height: 22, child: CircularProgressIndicator(strokeWidth: 2.5, color: Colors.white))
-                          : Text(_creating ? 'Create account' : 'Sign in'),
-                    ),
-
-                    // Google sign-in uses a pop-up, which works on the website.
-                    if (kIsWeb) ...[
-                      const SizedBox(height: 16),
-                      const Row(children: [
-                        Expanded(child: Divider()),
-                        Padding(
-                          padding: EdgeInsets.symmetric(horizontal: 12),
-                          child: Text('or', style: TextStyle(color: AppColors.muted)),
-                        ),
-                        Expanded(child: Divider()),
-                      ]),
-                      const SizedBox(height: 16),
-                      OutlinedButton.icon(
-                        style: OutlinedButton.styleFrom(
-                          minimumSize: const Size.fromHeight(52),
-                          backgroundColor: Colors.white,
-                          foregroundColor: AppColors.text,
-                          side: const BorderSide(color: Color(0xFFDDD6CB)),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                          textStyle: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                        ),
-                        onPressed: _busy ? null : _google,
-                        icon: const Text('G',
-                            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: Color(0xFF4285F4))),
-                        label: const Text('Continue with Google'),
+                      Expanded(child: RowDivider(indent: 0)),
+                    ]),
+                    const SizedBox(height: 18),
+                    CupertinoButton(
+                      color: AppColors.card,
+                      borderRadius: BorderRadius.circular(12),
+                      padding: const EdgeInsets.symmetric(vertical: 15),
+                      onPressed: _busy ? null : _google,
+                      child: const Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text('G', style: TextStyle(fontSize: 19, fontWeight: FontWeight.w700, color: Color(0xFF4285F4))),
+                          SizedBox(width: 10),
+                          Text('Continue with Google',
+                              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.text)),
+                        ],
                       ),
-                    ],
-
-                    const SizedBox(height: 20),
-                    TextButton(
-                      onPressed: _busy
-                          ? null
-                          : () => setState(() {
-                                _creating = !_creating;
-                                _error = null;
-                                _info = null;
-                              }),
-                      child: Text(_creating
-                          ? 'Already have an account? Sign in'
-                          : "New here? Create an account"),
                     ),
                   ],
-                ),
+
+                  const SizedBox(height: 18),
+                  CupertinoButton(
+                    onPressed: _busy
+                        ? null
+                        : () => setState(() {
+                              _creating = !_creating;
+                              _clearMessages();
+                            }),
+                    child: Text(
+                      _creating ? 'Already have an account? Sign in' : 'New here? Create an account',
+                      style: const TextStyle(fontSize: 15),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -249,15 +271,14 @@ class _AuthPageState extends State<AuthPage> {
     );
   }
 
-  InputDecoration _field(String label, IconData icon) => InputDecoration(
-        labelText: label,
-        prefixIcon: Icon(icon),
-        filled: true,
-        fillColor: Colors.white,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(14), borderSide: BorderSide.none),
-        enabledBorder: OutlineInputBorder(
-            borderRadius: BorderRadius.circular(14), borderSide: const BorderSide(color: Color(0xFFE4DDD2))),
-      );
+  void _clearMessages() {
+    if (_error != null || _info != null) {
+      setState(() {
+        _error = null;
+        _info = null;
+      });
+    }
+  }
 }
 
 class _Notice extends StatelessWidget {
@@ -271,10 +292,10 @@ class _Notice extends StatelessWidget {
       margin: const EdgeInsets.only(bottom: 8),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.08),
+        color: color.withValues(alpha: 0.10),
         borderRadius: BorderRadius.circular(12),
       ),
-      child: Text(text, style: TextStyle(color: color, fontSize: 14)),
+      child: Text(text, style: TextStyle(color: color, fontSize: 15)),
     );
   }
 }
@@ -286,51 +307,58 @@ class AccountPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final user = FirebaseAuth.instance.currentUser;
+    final email = user?.email ?? 'Unknown';
     return SafeArea(
+      bottom: false,
       child: ListView(
-        padding: const EdgeInsets.all(20),
+        padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
         children: [
-          const Text('Account', style: TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
-          const SizedBox(height: 16),
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(14)),
+          const LargeTitle('Account'),
+          InsetCard(
+            padding: const EdgeInsets.all(14),
             child: Row(
               children: [
-                const CircleAvatar(
-                  backgroundColor: Color(0xFFE6F2EA),
-                  child: Icon(Icons.person, color: AppColors.darkGreen),
+                Container(
+                  width: 52,
+                  height: 52,
+                  alignment: Alignment.center,
+                  decoration: const BoxDecoration(color: AppColors.blue, shape: BoxShape.circle),
+                  child: Text(
+                    email.isNotEmpty ? email[0].toUpperCase() : '?',
+                    style: const TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.w600),
+                  ),
                 ),
-                const SizedBox(width: 12),
+                const SizedBox(width: 14),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       const Text('Signed in as', style: TextStyle(color: AppColors.muted, fontSize: 13)),
-                      Text(user?.email ?? 'Unknown', style: const TextStyle(fontSize: 16)),
+                      Text(email, style: const TextStyle(fontSize: 17)),
                     ],
                   ),
                 ),
               ],
             ),
           ),
-          const SizedBox(height: 12),
-          const Text(
-            'Your spending is saved to your account, so it shows up on any phone or computer where you sign in.',
-            style: TextStyle(color: AppColors.muted, fontSize: 14),
-          ),
-          const SizedBox(height: 24),
-          OutlinedButton.icon(
-            style: OutlinedButton.styleFrom(
-              minimumSize: const Size.fromHeight(50),
-              foregroundColor: AppColors.red,
-              side: const BorderSide(color: Color(0xFFF0C9C9)),
-              backgroundColor: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text(
+              'Your spending is saved to your account, so it shows up on any phone or computer where you sign in.',
+              style: TextStyle(color: AppColors.muted, fontSize: 13),
             ),
-            onPressed: () => FirebaseAuth.instance.signOut(),
-            icon: const Icon(Icons.logout),
-            label: const Text('Sign out'),
+          ),
+          const SizedBox(height: 28),
+          InsetCard(
+            child: CupertinoButton(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              onPressed: () async {
+                if (await confirmIos(context, 'Sign out?', ok: 'Sign Out')) {
+                  await FirebaseAuth.instance.signOut();
+                }
+              },
+              child: const Text('Sign Out', style: TextStyle(color: AppColors.red, fontSize: 17)),
+            ),
           ),
         ],
       ),

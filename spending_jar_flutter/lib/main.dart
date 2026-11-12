@@ -1,6 +1,8 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:google_fonts/google_fonts.dart';
 
 import 'auth_page.dart';
 import 'firebase_options.dart';
@@ -23,17 +25,19 @@ Future<void> main() async {
   runApp(SpendingJarApp(startupError: startupError));
 }
 
+/// iOS system colours.
 class AppColors {
-  static const background = Color(0xFFFAF7F2);
+  static const background = Color(0xFFF2F2F7); // systemGroupedBackground
   static const card = Colors.white;
-  static const green = Color(0xFF4CAF7A);
-  static const darkGreen = Color(0xFF2F7D55);
-  static const orange = Color(0xFFF2A541);
-  static const red = Color(0xFFE05A5A);
-  static const blue = Color(0xFF3A6EA5);
-  static const track = Color(0xFFEEE7DC);
-  static const text = Color(0xFF222222);
-  static const muted = Color(0xFF888888);
+  static const green = Color(0xFF34C759);
+  static const darkGreen = Color(0xFF248A3D);
+  static const orange = Color(0xFFFF9500);
+  static const red = Color(0xFFFF3B30);
+  static const blue = Color(0xFF007AFF);
+  static const track = Color(0xFFE5E5EA);
+  static const text = Color(0xFF000000);
+  static const muted = Color(0xFF8A8A8E);
+  static const separator = Color(0xFFD1D1D6);
 }
 
 class SpendingJarApp extends StatelessWidget {
@@ -42,13 +46,27 @@ class SpendingJarApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final base = ThemeData(
+      useMaterial3: true,
+      platform: TargetPlatform.iOS,
+      colorScheme: ColorScheme.fromSeed(seedColor: AppColors.blue, surface: AppColors.background),
+      scaffoldBackgroundColor: AppColors.background,
+      splashFactory: NoSplash.splashFactory,
+      highlightColor: Colors.transparent,
+    );
     return MaterialApp(
       title: 'Spending Jar',
       debugShowCheckedModeBanner: false,
-      theme: ThemeData(
-        useMaterial3: true,
-        colorScheme: ColorScheme.fromSeed(seedColor: AppColors.green, surface: AppColors.background),
-        scaffoldBackgroundColor: AppColors.background,
+      theme: base.copyWith(
+        textTheme: GoogleFonts.interTextTheme(base.textTheme),
+        cupertinoOverrideTheme: CupertinoThemeData(
+          primaryColor: AppColors.blue,
+          scaffoldBackgroundColor: AppColors.background,
+          textTheme: CupertinoTextThemeData(
+            primaryColor: AppColors.blue,
+            textStyle: GoogleFonts.inter(fontSize: 17, color: AppColors.text, letterSpacing: -0.4),
+          ),
+        ),
       ),
       home: startupError != null ? _Message(text: startupError!) : const AuthGate(),
     );
@@ -65,11 +83,10 @@ class AuthGate extends StatelessWidget {
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(body: Center(child: CupertinoActivityIndicator(radius: 14)));
         }
         final user = snap.data;
         if (user == null) return const AuthPage();
-        // A new key per user, so signing in as someone else starts a fresh store.
         return _SignedIn(key: ValueKey(user.uid), uid: user.uid);
       },
     );
@@ -101,11 +118,14 @@ class _SignedInState extends State<_SignedIn> {
         if (store.error != null) {
           return _Message(
             text: "Couldn't load your data: ${store.error}",
-            action: TextButton(onPressed: () => FirebaseAuth.instance.signOut(), child: const Text('Sign out')),
+            action: CupertinoButton(
+              onPressed: () => FirebaseAuth.instance.signOut(),
+              child: const Text('Sign out'),
+            ),
           );
         }
         if (!store.ready) {
-          return const Scaffold(body: Center(child: CircularProgressIndicator()));
+          return const Scaffold(body: Center(child: CupertinoActivityIndicator(radius: 14)));
         }
         return HomeShell(store: store);
       },
@@ -135,31 +155,186 @@ class _HomeShellState extends State<HomeShell> {
           const AccountPage(),
         ],
       ),
-      bottomNavigationBar: NavigationBar(
-        selectedIndex: _tab,
-        onDestinationSelected: (i) => setState(() => _tab = i),
-        backgroundColor: Colors.white,
-        indicatorColor: const Color(0xFFE6F2EA),
-        destinations: const [
-          NavigationDestination(
-            icon: Icon(Icons.savings_outlined),
-            selectedIcon: Icon(Icons.savings, color: AppColors.darkGreen),
-            label: 'Jar',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.bar_chart_outlined),
-            selectedIcon: Icon(Icons.bar_chart, color: AppColors.darkGreen),
-            label: 'Stats',
-          ),
-          NavigationDestination(
-            icon: Icon(Icons.person_outline),
-            selectedIcon: Icon(Icons.person, color: AppColors.darkGreen),
-            label: 'Account',
-          ),
+      bottomNavigationBar: CupertinoTabBar(
+        currentIndex: _tab,
+        onTap: (i) => setState(() => _tab = i),
+        activeColor: AppColors.blue,
+        inactiveColor: AppColors.muted,
+        backgroundColor: const Color(0xF2F9F9F9),
+        items: const [
+          BottomNavigationBarItem(icon: Icon(CupertinoIcons.home), label: 'Jar'),
+          BottomNavigationBarItem(icon: Icon(CupertinoIcons.chart_bar), label: 'Stats'),
+          BottomNavigationBarItem(icon: Icon(CupertinoIcons.person_crop_circle), label: 'Account'),
         ],
       ),
     );
   }
+}
+
+// ---------------------------------------------------------------------------
+// Shared iOS-style pieces
+// ---------------------------------------------------------------------------
+
+/// Big bold page title, like iOS "large titles".
+class LargeTitle extends StatelessWidget {
+  const LargeTitle(this.text, {super.key, this.trailing});
+  final String text;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(4, 8, 4, 14),
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(text,
+                style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w700, letterSpacing: -0.8)),
+          ),
+          if (trailing != null) trailing!,
+        ],
+      ),
+    );
+  }
+}
+
+/// Small grey heading above a group, like in iOS Settings.
+class GroupHeader extends StatelessWidget {
+  const GroupHeader(this.text, {super.key});
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 22, 16, 7),
+      child: Text(text.toUpperCase(),
+          style: const TextStyle(fontSize: 13, color: AppColors.muted, letterSpacing: 0.1)),
+    );
+  }
+}
+
+/// White rounded box that holds a group of rows.
+class InsetCard extends StatelessWidget {
+  const InsetCard({super.key, required this.child, this.padding = EdgeInsets.zero});
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      padding: padding,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(12)),
+      child: child,
+    );
+  }
+}
+
+/// Thin line between rows, indented like iOS lists.
+class RowDivider extends StatelessWidget {
+  const RowDivider({super.key, this.indent = 16});
+  final double indent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: EdgeInsets.only(left: indent),
+      height: 0.5,
+      color: AppColors.separator,
+    );
+  }
+}
+
+/// An iOS-style sheet that slides up from the bottom, with Cancel and a Done button.
+class IosSheet extends StatelessWidget {
+  const IosSheet({
+    super.key,
+    required this.title,
+    required this.child,
+    required this.onDone,
+    this.doneLabel = 'Done',
+  });
+
+  final String title;
+  final Widget child;
+  final VoidCallback onDone;
+  final String doneLabel;
+
+  @override
+  Widget build(BuildContext context) {
+    return Material(
+      type: MaterialType.transparency,
+      child: Padding(
+        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: Container(
+          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.9),
+          decoration: const BoxDecoration(
+            color: AppColors.background,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
+          ),
+          child: SafeArea(
+            top: false,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                const SizedBox(height: 6),
+                Container(
+                  width: 36,
+                  height: 5,
+                  decoration: BoxDecoration(color: AppColors.separator, borderRadius: BorderRadius.circular(3)),
+                ),
+                Row(
+                  children: [
+                    CupertinoButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('Cancel'),
+                    ),
+                    Expanded(
+                      child: Text(title,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+                    ),
+                    CupertinoButton(
+                      onPressed: onDone,
+                      child: Text(doneLabel, style: const TextStyle(fontWeight: FontWeight.w600)),
+                    ),
+                  ],
+                ),
+                Flexible(
+                  child: SingleChildScrollView(
+                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
+                    child: child,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// iOS alert with Cancel and a confirm button. Returns true when confirmed.
+Future<bool> confirmIos(BuildContext context, String title,
+    {String? message, String ok = 'Delete', bool destructive = true}) async {
+  final res = await showCupertinoDialog<bool>(
+    context: context,
+    builder: (ctx) => CupertinoAlertDialog(
+      title: Text(title),
+      content: message == null ? null : Text(message),
+      actions: [
+        CupertinoDialogAction(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+        CupertinoDialogAction(
+          isDestructiveAction: destructive,
+          isDefaultAction: !destructive,
+          onPressed: () => Navigator.pop(ctx, true),
+          child: Text(ok),
+        ),
+      ],
+    ),
+  );
+  return res ?? false;
 }
 
 class _Message extends StatelessWidget {
@@ -177,10 +352,10 @@ class _Message extends StatelessWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.cloud_off, size: 48, color: AppColors.muted),
+                const Icon(CupertinoIcons.exclamationmark_triangle, size: 44, color: AppColors.muted),
                 const SizedBox(height: 12),
                 Text(text, textAlign: TextAlign.center, style: const TextStyle(fontSize: 15)),
-                if (action != null) ...[const SizedBox(height: 12), action!],
+                if (action != null) ...[const SizedBox(height: 8), action!],
               ],
             ),
           ),
