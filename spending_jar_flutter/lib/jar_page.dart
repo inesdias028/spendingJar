@@ -169,31 +169,6 @@ class _JarPageState extends State<JarPage> {
     );
   }
 
-  Future<void> _backup() async {
-    await Clipboard.setData(ClipboardData(text: store.exportBackup()));
-    _toast('Backup copied. Paste it into Notes or an email to keep it safe.');
-  }
-
-  Future<void> _restore() async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    final text = data?.text ?? '';
-    final backup = Store.parseBackup(text);
-    if (backup == null) {
-      _toast("Copy a Spending Jar backup first, then tap Restore");
-      return;
-    }
-    final count = (backup['expenses'] as List).length;
-    final ok = await _confirm(
-      'Restore this backup? It has $count entries and replaces what is in the app now.',
-      ok: 'Restore',
-      danger: false,
-    );
-    if (ok) {
-      store.restore(backup);
-      _toast('Backup restored');
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return ListenableBuilder(
@@ -341,29 +316,6 @@ class _JarPageState extends State<JarPage> {
                   ),
                 ),
 
-                // ---- Backup ----
-                const SizedBox(height: 24),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        style: _backupStyle,
-                        onPressed: _backup,
-                        icon: const Icon(Icons.copy, size: 18),
-                        label: const Text('Back up'),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        style: _backupStyle,
-                        onPressed: _restore,
-                        icon: const Icon(Icons.restore, size: 18),
-                        label: const Text('Restore'),
-                      ),
-                    ),
-                  ],
-                ),
               ],
             ),
           ),
@@ -372,14 +324,6 @@ class _JarPageState extends State<JarPage> {
     );
   }
 
-  static final _backupStyle = OutlinedButton.styleFrom(
-    minimumSize: const Size.fromHeight(48),
-    backgroundColor: AppColors.card,
-    foregroundColor: AppColors.blue,
-    side: const BorderSide(color: Color(0xFFE4DDD2)),
-    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-    textStyle: const TextStyle(fontWeight: FontWeight.w600, fontSize: 15),
-  );
 }
 
 // ---------------------------------------------------------------------------

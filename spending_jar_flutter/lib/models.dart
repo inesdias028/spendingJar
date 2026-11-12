@@ -179,18 +179,8 @@ class Store extends ChangeNotifier {
     if (raw != null) await prefs.remove(_localKey);
   }
 
-  /// Writes everything. With [replace], deletes the existing expenses first.
-  Future<void> _writeAll(double b, List<Category> cats, List<Expense> exps, {bool replace = false}) async {
-    if (replace) {
-      final old = await _expCol.get();
-      for (var i = 0; i < old.docs.length; i += 400) {
-        final batch = _db.batch();
-        for (final d in old.docs.skip(i).take(400)) {
-          batch.delete(d.reference);
-        }
-        await batch.commit();
-      }
-    }
+  /// Writes a new account's starting data.
+  Future<void> _writeAll(double b, List<Category> cats, List<Expense> exps) async {
     await _userDoc.set({
       'budget': b,
       'categories': cats.map((c) => c.toJson()).toList(),
@@ -282,48 +272,6 @@ class Store extends ChangeNotifier {
       .where((e) => !e.date.isBefore(start) && e.date.isBefore(end))
       .toList()
     ..sort((a, b) => b.date.compareTo(a.date));
-
-  // ---- backup (same format as the website) ----
-
-  String exportBackup() => const JsonEncoder.withIndent('  ').convert({
-        'app': 'spending-jar',
-        'version': 1,
-        'exportedAt': DateTime.now().toUtc().toIso8601String(),
-        'budget': budget,
-        'categories': categories.map((c) => c.toJson()).toList(),
-        'expenses': expenses.map((e) => e.toJson()).toList(),
-      });
-
-  /// Returns the parsed backup if [text] is a valid Spending Jar backup.
-  static Map<String, dynamic>? parseBackup(String text) {
-    try {
-      final m = Map<String, dynamic>.from(jsonDecode(text) as Map);
-      if (m['app'] != 'spending-jar') return null;
-      if (m['budget'] is! num || m['expenses'] is! List || m['categories'] is! List) return null;
-      for (final e in m['expenses'] as List) {
-        Expense.fromJson(Map<String, dynamic>.from(e as Map));
-      }
-      return m;
-    } catch (_) {
-      return null;
-    }
-  }
-
-  /// Replaces this account's data with the backup.
-  Future<void> restore(Map<String, dynamic> backup) async {
-    final b = (backup['budget'] as num).toDouble();
-    final cats = (backup['categories'] as List)
-        .map((c) => Category.fromJson(Map<String, dynamic>.from(c as Map)))
-        .toList();
-    final exps = (backup['expenses'] as List)
-        .map((e) => Expense.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
-    try {
-      await _writeAll(b, cats, exps, replace: true);
-    } catch (e) {
-      _fail(e);
-    }
-  }
 }
 
 // ---------------------------------------------------------------------------
