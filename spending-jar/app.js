@@ -319,8 +319,151 @@ $('restoreFile').addEventListener('change', (e) => {
 });
 showLastBackup();
 
+// ---------- Stats page ----------
+let period = 'week';   // 'week' | 'month' | 'year'
+let offset = 0;        // 0 = current, -1 = previous, ...
+let view = 'home';
+
+const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S'];
+const MONTHS = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D'];
+const DAY = 86400000;
+
+// Returns { start, end, buckets: [{ start, end, label }], days, label }
+function periodRange(p, off) {
+  const now = new Date();
+  let start, end, buckets = [], label;
+  if (p === 'week') {
+    start = new Date(startOfWeek());
+    start.setDate(start.getDate() + off * 7);
+    end = new Date(start); end.setDate(end.getDate() + 7);
+    for (let i = 0; i < 7; i++) {
+      const b = new Date(start); b.setDate(b.getDate() + i);
+      const e = new Date(b); e.setDate(e.getDate() + 1);
+      buckets.push({ start: b, end: e, label: WEEKDAYS[i] });
+    }
+    const last = new Date(end - DAY);
+    label = off === 0 ? 'This week' : off === -1 ? 'Last week'
+      : `${start.toLocaleDateString('pt-PT', { day: 'numeric', month: 'short' })} – ${last.toLocaleDateString('pt-PT', { day: 'numeric', month: 'short' })}`;
+  } else if (p === 'month') {
+    start = new Date(now.getFullYear(), now.getMonth() + off, 1);
+    end = new Date(start.getFullYear(), start.getMonth() + 1, 1);
+    const n = Math.round((end - start) / DAY);
+    for (let i = 0; i < n; i++) {
+      const b = new Date(start.getFullYear(), start.getMonth(), i + 1);
+      const e = new Date(start.getFullYear(), start.getMonth(), i + 2);
+      const d = i + 1;
+      buckets.push({ start: b, end: e, label: d === 1 || d % 5 === 0 ? String(d) : '' });
+    }
+    label = start.toLocaleDateString('pt-PT', { month: 'long', year: 'numeric' });
+  } else {
+    start = new Date(now.getFullYear() + off, 0, 1);
+    end = new Date(start.getFullYear() + 1, 0, 1);
+    for (let m = 0; m < 12; m++) {
+      buckets.push({ start: new Date(start.getFullYear(), m, 1), end: new Date(start.getFullYear(), m + 1, 1), label: MONTHS[m] });
+    }
+    label = String(start.getFullYear());
+  }
+  const days = Math.round((end - start) / DAY);
+  return { start, end, buckets, days, label };
+}
+
+function renderStats() {
+  const r = periodRange(period, offset);
+  const inRange = state.expenses.filter((e) => {
+    const t = new Date(e.date).getTime();
+    return t >= r.start.getTime() && t < r.end.getTime();
+  });
+  const total = inRange.reduce((s, e) => s + e.amount, 0);
+
+  // Days counted for the average: only up to today for the current period
+  const now = Date.now();
+  const elapsed = offset === 0
+    ? Math.max(1, Math.ceil((Math.min(now, r.end.getTime()) - r.start.getTime()) / DAY))
+    : r.days;
+  const periodBudget = state.budget * r.days / 7;
+
+  $('periodLabel').textContent = r.label;
+  $('nextPeriod').classList.toggle('off', offset === 0);
+  $('stSpent').textContent = euro(total);
+  $('stAvg').textContent = euro(total / elapsed);
+
+  const pct = periodBudget > 0 ? total / periodBudget : 0;
+  const bar = $('stBar');
+  bar.style.width = Math.min(100, pct * 100) + '%';
+  bar.style.background = pct < 0.8 ? '#4CAF7A' : pct <= 1 ? '#F2A541' : '#E05A5A';
+  const diff = periodBudget - total;
+  $('stBudget').textContent = `${Math.round(pct * 100)}% of ${euro(periodBudget)} budget · ` +
+    (diff >= 0 ? `${euro(diff)} under` : `${euro(-diff)} over`);
+
+  // Chart
+  const sums = r.buckets.map((b) => inRange
+    .filter((e) => { const t = new Date(e.date).getTime(); return t >= b.start.getTime() && t < b.end.getTime(); })
+    .reduce((s, e) => s + e.amount, 0));
+  const max = Math.max(...sums, 0);
+  const chart = $('chart');
+  chart.innerHTML = '';
+  r.buckets.forEach((b, i) => {
+    const col = document.createElement('div');
+    col.className = 'col';
+    const isNow = now >= b.start.getTime() && now < b.end.getTime();
+    const h = max > 0 ? (sums[i] / max) * 100 : 0;
+    col.innerHTML = `<div class="bar${sums[i] === 0 ? ' zero' : ''}${isNow ? ' now' : ''}" style="height:${h}%"></div>` +
+      (b.label ? `<span class="lab">${b.label}</span>` : '');
+    col.title = `${b.start.toLocaleDateString('pt-PT')}: ${euro(sums[i])}`;
+    chart.appendChild(col);
+  });
+  if (max === 0) {
+    const m = document.createElement('div');
+    m.className = 'empty-chart';
+    m.textContent = 'No spending in this period';
+    chart.appendChild(m);
+  }
+
+  // By category
+  const groups = {};
+  inRange.forEach((e) => {
+    const c = catFor(e);
+    const k = e.category || c.label;
+    if (!groups[k]) groups[k] = { emoji: c.emoji, label: c.label, total: 0, count: 0 };
+    groups[k].total += e.amount;
+    groups[k].count++;
+  });
+  const rows = Object.values(groups).sort((a, b) => b.total - a.total);
+  const top = rows.length ? rows[0].total : 0;
+  $('byCat').innerHTML = rows.length
+    ? rows.map((g) => `<div class="catrow">
+        <div class="top"><span class="e">${esc(g.emoji)}</span><span class="name">${esc(g.label)} <span class="small">· ${g.count}×</span></span>
+        <span class="val">${euro(g.total)}</span><span class="pct">${Math.round((g.total / total) * 100)}%</span></div>
+        <div class="track"><div style="width:${(g.total / top) * 100}%"></div></div></div>`).join('')
+    : '<div class="empty">Nothing spent in this period</div>';
+}
+
+document.querySelectorAll('.seg button').forEach((b) => {
+  b.onclick = () => {
+    period = b.dataset.period;
+    offset = 0;
+    document.querySelectorAll('.seg button').forEach((x) => x.classList.toggle('on', x === b));
+    renderStats();
+  };
+});
+$('prevPeriod').onclick = () => { offset--; renderStats(); };
+$('nextPeriod').onclick = () => { if (offset < 0) { offset++; renderStats(); } };
+
+function showView(v) {
+  view = v;
+  $('viewHome').hidden = v !== 'home';
+  $('viewStats').hidden = v !== 'stats';
+  document.querySelectorAll('.tabbar button').forEach((x) => x.classList.toggle('on', x.dataset.view === v));
+  if (v === 'stats') renderStats(); else render();
+  window.scrollTo(0, 0);
+}
+document.querySelectorAll('.tabbar button').forEach((b) => { b.onclick = () => showView(b.dataset.view); });
+
 // Re-render when the app comes back to the foreground (so a new week starts fresh)
-document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) return;
+  if (view === 'stats') renderStats(); else render();
+});
 
 // ---------- Offline support ----------
 if ('serviceWorker' in navigator && location.protocol === 'https:') {

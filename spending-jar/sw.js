@@ -1,6 +1,6 @@
 // Service worker: lets Spending Jar open with no internet.
 // Bump VERSION whenever you change any file, so phones pick up the update.
-const VERSION = 'jar-v4';
+const VERSION = 'jar-v5';
 const FILES = [
   './',
   'index.html',

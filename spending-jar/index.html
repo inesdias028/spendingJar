@@ -19,7 +19,7 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <main class="app">
+  <main class="app" id="viewHome">
     <section class="header">
       <div class="jar" aria-hidden="true"><div class="fill" id="fill"></div></div>
       <div class="summary">
@@ -45,6 +45,40 @@
     <p class="hint" id="lastBackup"></p>
   </main>
 
+  <!-- Stats page -->
+  <main class="app" id="viewStats" hidden>
+    <div class="seg" role="tablist" aria-label="Period">
+      <button role="tab" data-period="week" class="on">Week</button>
+      <button role="tab" data-period="month">Month</button>
+      <button role="tab" data-period="year">Year</button>
+    </div>
+
+    <div class="period">
+      <button id="prevPeriod" aria-label="Previous period">‹</button>
+      <div id="periodLabel">This week</div>
+      <button id="nextPeriod" aria-label="Next period">›</button>
+    </div>
+
+    <section class="stat-cards">
+      <div class="stat"><div class="muted">Spent</div><div class="big" id="stSpent">€0,00</div></div>
+      <div class="stat"><div class="muted">Per day</div><div class="big" id="stAvg">€0,00</div></div>
+    </section>
+
+    <div class="budget-bar"><div id="stBar"></div></div>
+    <div class="small" id="stBudget"></div>
+
+    <h2>Over time</h2>
+    <div class="chart" id="chart"></div>
+
+    <h2>By category</h2>
+    <div id="byCat"></div>
+  </main>
+
+  <nav class="tabbar">
+    <button data-view="home" class="on"><span>🫙</span>Jar</button>
+    <button data-view="stats"><span>📊</span>Stats</button>
+  </nav>
+
   <div class="toast" id="toast" role="status"></div>
 
   <!-- Confirm delete -->
@@ -54,7 +88,6 @@
       <div class="btns">
         <button id="confirmCancel">Cancel</button>
         <button class="del" id="confirmOk">Delete</button>
-
       </div>
     </div>
   </div>
