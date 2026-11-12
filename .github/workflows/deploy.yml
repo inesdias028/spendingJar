@@ -1,0 +1,61 @@
+name: Build and deploy Spending Jar
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Build the Flutter web app
+        working-directory: spending_jar_flutter
+        run: |
+          # Adds the web/ folder Flutter needs, without touching lib/ or pubspec.yaml
+          flutter create --platforms=web --project-name spending_jar .
+          rm -f test/widget_test.dart
+          mkdir -p assets
+          cp ../spending-jar/icons/icon-512.png assets/icon.png
+          flutter pub get
+          dart run flutter_launcher_icons
+          # App name and colours on the iPhone home screen
+          sed -i 's/<title>spending_jar<\/title>/<title>Spending Jar<\/title>/' web/index.html
+          sed -i 's/content="spending_jar"/content="Jar"/' web/index.html
+          sed -i 's/"name": "spending_jar"/"name": "Spending Jar"/; s/"short_name": "spending_jar"/"short_name": "Jar"/' web/manifest.json
+          flutter build web --release --base-href /spendingJar/spending-jar/
+
+      - name: Put the site together
+        run: |
+          mkdir -p _site/spending-jar
+          cp index.html _site/index.html
+          cp -r spending_jar_flutter/build/web/. _site/spending-jar/
+
+      - uses: actions/upload-pages-artifact@v5
+        with:
+          path: _site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
