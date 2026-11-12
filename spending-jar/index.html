@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Spending Jar</title>
+  <meta name="description" content="A simple weekly spending tracker.">
+  <meta name="theme-color" content="#FAF7F2">
+
+  <!-- Installable app (PWA) -->
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Jar">
+
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <main class="app">
+    <section class="header">
+      <div class="jar" aria-hidden="true"><div class="fill" id="fill"></div></div>
+      <div class="summary">
+        <div class="muted">Left this week</div>
+        <div class="left" id="left">€0,00</div>
+        <div class="small" id="spent">Spent €0,00</div>
+        <div id="budgetBox"></div>
+      </div>
+    </section>
+
+    <input class="amount" id="amount" inputmode="decimal" placeholder="€ 0,00" aria-label="Amount" autocomplete="off">
+    <div class="cats" id="cats"></div>
+
+    <h2>This week</h2>
+    <div class="list" id="list"></div>
+    <p class="hint">Long-press an item or category to delete it</p>
+
+    <section class="backup">
+      <button id="backupBtn">⬇️ Back up</button>
+      <button id="restoreBtn">⬆️ Restore</button>
+      <input type="file" id="restoreFile" accept=".json,application/json" hidden>
+    </section>
+    <p class="hint" id="lastBackup"></p>
+  </main>
+
+  <div class="toast" id="toast" role="status"></div>
+
+  <!-- Confirm delete -->
+  <div class="modal-bg" id="confirmBg">
+    <div class="modal" role="dialog" aria-modal="true">
+      <p id="confirmText">Delete this?</p>
+      <div class="btns">
+        <button id="confirmCancel">Cancel</button>
+        <button class="del" id="confirmOk">Delete</button>
+
+      </div>
+    </div>
+  </div>
+
+  <!-- New category -->
+  <div class="modal-bg" id="newBg">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="newTitle">
+      <h3 id="newTitle">New category</h3>
+      <input class="emoji" id="newEmoji" maxlength="4" placeholder="🏷️" aria-label="Emoji">
+      <div class="suggest" id="suggest"></div>
+      <input id="newName" maxlength="14" placeholder="Gym" aria-label="Category name">
+      <div class="btns">
+        <button id="newCancel">Cancel</button>
+        <button class="primary" id="newSave">Add</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
