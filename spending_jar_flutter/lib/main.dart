@@ -65,6 +65,7 @@ class SpendingJarApp extends StatelessWidget {
           textTheme: CupertinoTextThemeData(
             primaryColor: AppColors.blue,
             textStyle: GoogleFonts.inter(fontSize: 17, color: AppColors.text, letterSpacing: -0.4),
+            tabLabelTextStyle: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.muted),
           ),
         ),
       ),
@@ -158,6 +159,8 @@ class _HomeShellState extends State<HomeShell> {
       bottomNavigationBar: CupertinoTabBar(
         currentIndex: _tab,
         onTap: (i) => setState(() => _tab = i),
+        height: 68,
+        iconSize: 34,
         activeColor: AppColors.blue,
         inactiveColor: AppColors.muted,
         backgroundColor: const Color(0xF2F9F9F9),
