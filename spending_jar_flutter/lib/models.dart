@@ -1,5 +1,8 @@
+import 'dart:async';
 import 'dart:convert';
 
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -73,78 +76,166 @@ const defaultCategories = <Category>[
 const suggestedEmojis = ['🏋️', '🐶', '💊', '🎁', '✈️', '🏠', '📚', '🍺', '💇', '🎮', '🚗', '👶'];
 
 // ---------------------------------------------------------------------------
-// Store: holds everything and saves it on the device
+// Store: holds one user's data and keeps it in sync with Firebase.
+//
+// Firestore layout (each user can only see their own, see firestore.rules):
+//   users/{uid}                 -> { budget, categories, updatedAt }
+//   users/{uid}/expenses/{id}   -> { amount, category, emoji, label, date }
 // ---------------------------------------------------------------------------
 
 class Store extends ChangeNotifier {
-  // Same key and JSON shape as the website, so backups move between them.
-  static const _storageKey = 'spending-jar-v1';
+  Store(this.uid) {
+    _start();
+  }
+
+  final String uid;
+
+  // Data saved on this device by the earlier, no-login version of the app.
+  static const _localKey = 'spending-jar-v1';
 
   double budget = 100;
   List<Expense> expenses = [];
   List<Category> categories = List.of(defaultCategories);
 
-  Future<void> load() async {
+  /// True once the first data has arrived from Firebase.
+  bool ready = false;
+
+  /// Set if Firebase refused or failed (shown on screen instead of the app).
+  String? error;
+
+  final _db = FirebaseFirestore.instance;
+  StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _userSub;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _expSub;
+  bool _gotUser = false, _gotExpenses = false;
+
+  DocumentReference<Map<String, dynamic>> get _userDoc => _db.collection('users').doc(uid);
+  CollectionReference<Map<String, dynamic>> get _expCol => _userDoc.collection('expenses');
+
+  Future<void> _start() async {
+    try {
+      final snap = await _userDoc.get();
+      if (!snap.exists) await _firstTimeSetup();
+    } catch (e) {
+      _fail(e);
+      return;
+    }
+
+    _userSub = _userDoc.snapshots().listen((d) {
+      final m = d.data();
+      if (m != null) {
+        budget = (m['budget'] as num?)?.toDouble() ?? 100;
+        if (m['categories'] is List) {
+          categories = (m['categories'] as List)
+              .map((c) => Category.fromJson(Map<String, dynamic>.from(c as Map)))
+              .toList();
+        }
+      }
+      _gotUser = true;
+      _maybeReady();
+    }, onError: _fail);
+
+    _expSub = _expCol.snapshots().listen((q) {
+      expenses = q.docs.map((d) => Expense.fromJson({...d.data(), 'id': d.id})).toList()
+        ..sort((a, b) => b.date.compareTo(a.date));
+      _gotExpenses = true;
+      _maybeReady();
+    }, onError: _fail);
+  }
+
+  void _maybeReady() {
+    if (_gotUser && _gotExpenses) ready = true;
+    notifyListeners();
+  }
+
+  void _fail(Object e) {
+    error = e is FirebaseException ? (e.message ?? e.code) : e.toString();
+    notifyListeners();
+  }
+
+  /// A brand-new account: copy anything saved on this device into it.
+  Future<void> _firstTimeSetup() async {
     final prefs = await SharedPreferences.getInstance();
-    final raw = prefs.getString(_storageKey);
+    final raw = prefs.getString(_localKey);
+    var b = 100.0;
+    var cats = List<Category>.of(defaultCategories);
+    var exps = <Expense>[];
     if (raw != null) {
       try {
-        _apply(Map<String, dynamic>.from(jsonDecode(raw) as Map));
+        final m = Map<String, dynamic>.from(jsonDecode(raw) as Map);
+        b = (m['budget'] as num?)?.toDouble() ?? 100;
+        if (m['categories'] is List) {
+          cats = (m['categories'] as List)
+              .map((c) => Category.fromJson(Map<String, dynamic>.from(c as Map)))
+              .toList();
+        }
+        exps = ((m['expenses'] as List?) ?? [])
+            .map((e) => Expense.fromJson(Map<String, dynamic>.from(e as Map)))
+            .toList();
       } catch (_) {
-        // Corrupt data: start fresh rather than crash.
+        // Unreadable local data: start fresh.
       }
     }
-    notifyListeners();
+    await _writeAll(b, cats, exps);
+    if (raw != null) await prefs.remove(_localKey);
   }
 
-  void _apply(Map<String, dynamic> m) {
-    budget = (m['budget'] as num?)?.toDouble() ?? 100;
-    expenses = ((m['expenses'] as List?) ?? [])
-        .map((e) => Expense.fromJson(Map<String, dynamic>.from(e as Map)))
-        .toList();
-    if (m['categories'] is List) {
-      categories = (m['categories'] as List)
-          .map((c) => Category.fromJson(Map<String, dynamic>.from(c as Map)))
-          .toList();
+  /// Writes everything. With [replace], deletes the existing expenses first.
+  Future<void> _writeAll(double b, List<Category> cats, List<Expense> exps, {bool replace = false}) async {
+    if (replace) {
+      final old = await _expCol.get();
+      for (var i = 0; i < old.docs.length; i += 400) {
+        final batch = _db.batch();
+        for (final d in old.docs.skip(i).take(400)) {
+          batch.delete(d.reference);
+        }
+        await batch.commit();
+      }
+    }
+    await _userDoc.set({
+      'budget': b,
+      'categories': cats.map((c) => c.toJson()).toList(),
+      'updatedAt': FieldValue.serverTimestamp(),
+    });
+    for (var i = 0; i < exps.length; i += 400) {
+      final batch = _db.batch();
+      for (final e in exps.skip(i).take(400)) {
+        batch.set(_expCol.doc(_safeId(e.id)), e.toJson()..remove('id'));
+      }
+      await batch.commit();
     }
   }
 
-  Map<String, dynamic> _toJson() => {
+  static String _safeId(String id) => id.isEmpty ? DateTime.now().microsecondsSinceEpoch.toString() : id.replaceAll('/', '_');
+
+  Future<void> _saveSettings() => _userDoc.update({
         'budget': budget,
-        'expenses': expenses.map((e) => e.toJson()).toList(),
         'categories': categories.map((c) => c.toJson()).toList(),
-      };
+        'updatedAt': FieldValue.serverTimestamp(),
+      }).catchError(_fail);
 
-  Future<void> _save() async {
-    final prefs = await SharedPreferences.getInstance();
-    await prefs.setString(_storageKey, jsonEncode(_toJson()));
+  @override
+  void dispose() {
+    _userSub?.cancel();
+    _expSub?.cancel();
+    super.dispose();
   }
 
-  void _changed() {
-    notifyListeners();
-    _save();
-  }
-
-  // ---- actions ----
+  // ---- actions (the screen updates straight away; Firebase syncs behind) ----
 
   void addExpense(double amount, Category c) {
-    expenses.insert(
-      0,
-      Expense(
-        id: DateTime.now().microsecondsSinceEpoch.toString(),
-        amount: amount,
-        category: c.key,
-        emoji: c.emoji,
-        label: c.label,
-        date: DateTime.now(),
-      ),
+    final e = Expense(
+      id: DateTime.now().microsecondsSinceEpoch.toString(),
+      amount: amount,
+      category: c.key,
+      emoji: c.emoji,
+      label: c.label,
+      date: DateTime.now(),
     );
-    _changed();
+    _expCol.doc(e.id).set(e.toJson()..remove('id')).catchError(_fail);
   }
 
   void deleteExpense(String id) {
-    expenses.removeWhere((e) => e.id == id);
-    _changed();
+    _expCol.doc(id).delete().catchError(_fail);
   }
 
   /// Returns an error message, or null if the category was added.
@@ -154,23 +245,29 @@ class Store extends ChangeNotifier {
     if (categories.any((c) => c.label.toLowerCase() == name.toLowerCase())) {
       return 'You already have that category';
     }
-    categories.add(Category(
-      key: 'c${DateTime.now().millisecondsSinceEpoch}',
-      label: name,
-      emoji: emoji.trim().isEmpty ? '🏷️' : emoji.trim(),
-    ));
-    _changed();
+    categories = [
+      ...categories,
+      Category(
+        key: 'c${DateTime.now().millisecondsSinceEpoch}',
+        label: name,
+        emoji: emoji.trim().isEmpty ? '🏷️' : emoji.trim(),
+      ),
+    ];
+    notifyListeners();
+    _saveSettings();
     return null;
   }
 
   void deleteCategory(String key) {
-    categories.removeWhere((c) => c.key == key);
-    _changed();
+    categories = categories.where((c) => c.key != key).toList();
+    notifyListeners();
+    _saveSettings();
   }
 
   void setBudget(double value) {
     budget = value;
-    _changed();
+    notifyListeners();
+    _saveSettings();
   }
 
   /// The category to show for an expense (falls back to its saved copy).
@@ -186,13 +283,15 @@ class Store extends ChangeNotifier {
       .toList()
     ..sort((a, b) => b.date.compareTo(a.date));
 
-  // ---- backup ----
+  // ---- backup (same format as the website) ----
 
   String exportBackup() => const JsonEncoder.withIndent('  ').convert({
         'app': 'spending-jar',
         'version': 1,
         'exportedAt': DateTime.now().toUtc().toIso8601String(),
-        ..._toJson(),
+        'budget': budget,
+        'categories': categories.map((c) => c.toJson()).toList(),
+        'expenses': expenses.map((e) => e.toJson()).toList(),
       });
 
   /// Returns the parsed backup if [text] is a valid Spending Jar backup.
@@ -201,7 +300,6 @@ class Store extends ChangeNotifier {
       final m = Map<String, dynamic>.from(jsonDecode(text) as Map);
       if (m['app'] != 'spending-jar') return null;
       if (m['budget'] is! num || m['expenses'] is! List || m['categories'] is! List) return null;
-      // Make sure every entry can be read.
       for (final e in m['expenses'] as List) {
         Expense.fromJson(Map<String, dynamic>.from(e as Map));
       }
@@ -211,9 +309,20 @@ class Store extends ChangeNotifier {
     }
   }
 
-  void restore(Map<String, dynamic> backup) {
-    _apply(backup);
-    _changed();
+  /// Replaces this account's data with the backup.
+  Future<void> restore(Map<String, dynamic> backup) async {
+    final b = (backup['budget'] as num).toDouble();
+    final cats = (backup['categories'] as List)
+        .map((c) => Category.fromJson(Map<String, dynamic>.from(c as Map)))
+        .toList();
+    final exps = (backup['expenses'] as List)
+        .map((e) => Expense.fromJson(Map<String, dynamic>.from(e as Map)))
+        .toList();
+    try {
+      await _writeAll(b, cats, exps, replace: true);
+    } catch (e) {
+      _fail(e);
+    }
   }
 }
 
