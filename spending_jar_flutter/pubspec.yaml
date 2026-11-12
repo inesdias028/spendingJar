@@ -10,6 +10,9 @@ dependencies:
   flutter:
     sdk: flutter
   shared_preferences: any
+  firebase_core: any
+  firebase_auth: any
+  cloud_firestore: any
 
 dev_dependencies:
   flutter_test:
