@@ -1,0 +1,30 @@
+name: spending_jar
+description: "A simple weekly spending tracker."
+publish_to: 'none'
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.3.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  shared_preferences: any
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_launcher_icons: any
+
+flutter:
+  uses-material-design: true
+
+flutter_launcher_icons:
+  image_path: "assets/icon.png"
+  android: false
+  ios: false
+  web:
+    generate: true
+    image_path: "assets/icon.png"
+    background_color: "#FAF7F2"
+    theme_color: "#FAF7F2"
