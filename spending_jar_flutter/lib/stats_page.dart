@@ -51,8 +51,14 @@ class _StatsPageState extends State<StatsPage> {
 
         final groups = <String, _Group>{};
         for (final e in items) {
-          final c = store.categoryFor(e);
-          final g = groups.putIfAbsent(e.category, () => _Group(c.emoji, c.label));
+          final _Group g;
+          if (e.id.startsWith('r_')) {
+            // Everything added automatically by a recurring payment gets its own row.
+            g = groups.putIfAbsent('__recurring', () => _Group('🔁', 'Recurring'));
+          } else {
+            final c = store.categoryFor(e);
+            g = groups.putIfAbsent(e.category, () => _Group(c.emoji, c.label));
+          }
           g.total += e.amount;
           g.count++;
         }
