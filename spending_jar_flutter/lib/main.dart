@@ -53,12 +53,12 @@ class SpendingJarApp extends StatelessWidget {
       scaffoldBackgroundColor: AppColors.background,
       splashFactory: NoSplash.splashFactory,
       highlightColor: Colors.transparent,
+      fontFamily: GoogleFonts.inter().fontFamily,
     );
     return MaterialApp(
       title: 'Spending Jar',
       debugShowCheckedModeBanner: false,
       theme: base.copyWith(
-        textTheme: GoogleFonts.interTextTheme(base.textTheme),
         cupertinoOverrideTheme: CupertinoThemeData(
           primaryColor: AppColors.blue,
           scaffoldBackgroundColor: AppColors.background,
