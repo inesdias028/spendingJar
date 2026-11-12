@@ -51,18 +51,16 @@ class _StatsPageState extends State<StatsPage> {
 
         final groups = <String, _Group>{};
         for (final e in items) {
-          final _Group g;
-          if (e.id.startsWith('r_')) {
-            // Everything added automatically by a recurring payment gets its own row.
-            g = groups.putIfAbsent('__recurring', () => _Group('🔁', 'Recurring'));
-          } else {
-            final c = store.categoryFor(e);
-            g = groups.putIfAbsent(e.category, () => _Group(c.emoji, c.label));
-          }
+          final c = store.categoryFor(e);
+          final g = groups.putIfAbsent(e.category, () => _Group(c.emoji, c.label));
           g.total += e.amount;
           g.count++;
         }
         final rows = groups.values.toList()..sort((a, b) => b.total.compareTo(a.total));
+        // Recurring payments stay in their own categories above; this is just their share.
+        final recurringItems = items.where((e) => e.id.startsWith('r_'));
+        final recurringTotal = recurringItems.fold<double>(0, (s, e) => s + e.amount);
+        final recurringCount = recurringItems.length;
 
         return SafeArea(
           bottom: false,
@@ -176,6 +174,37 @@ class _StatsPageState extends State<StatsPage> {
                     ],
                   ),
                 ),
+              if (recurringCount > 0) ...[
+                const GroupHeader('Recurring'),
+                InsetCard(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  child: Row(
+                    children: [
+                      const Text('🔁', style: TextStyle(fontSize: 24)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text('Recurring payments', style: TextStyle(fontSize: 17)),
+                            Text(
+                              '$recurringCount ${recurringCount == 1 ? 'payment' : 'payments'} · '
+                              '${total > 0 ? (recurringTotal / total * 100).round() : 0}% of spending',
+                              style: const TextStyle(fontSize: 13, color: AppColors.muted),
+                            ),
+                          ],
+                        ),
+                      ),
+                      Text(euro(recurringTotal), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+                    ],
+                  ),
+                ),
+                const Padding(
+                  padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+                  child: Text('Already counted in each category above.',
+                      style: TextStyle(fontSize: 13, color: AppColors.muted)),
+                ),
+              ],
             ],
           ),
         );
