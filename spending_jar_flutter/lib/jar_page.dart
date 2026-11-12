@@ -17,6 +17,7 @@ class JarPage extends StatefulWidget {
 class _JarPageState extends State<JarPage> {
   final _amount = TextEditingController();
   final _amountFocus = FocusNode();
+  Period? _repeat; // null = one-off
 
   Store get store => widget.store;
 
@@ -46,9 +47,16 @@ class _JarPageState extends State<JarPage> {
       return;
     }
     HapticFeedback.lightImpact();
-    store.addExpense(amount, c);
+    final repeat = _repeat;
+    if (repeat == null) {
+      store.addExpense(amount, c);
+    } else {
+      store.addRecurring(name: '', amount: amount, category: c, freq: repeat, start: DateTime.now());
+      _toast('${c.label} repeats ${freqName(repeat).toLowerCase()} from today');
+    }
     _amount.clear();
     _amountFocus.unfocus();
+    setState(() => _repeat = null);
   }
 
   void _categoryMenu(Category c) {
@@ -107,23 +115,7 @@ class _JarPageState extends State<JarPage> {
             child: ListView(
               padding: const EdgeInsets.fromLTRB(16, 8, 16, 32),
               children: [
-                LargeTitle(
-                  'Spending Jar',
-                  trailing: CupertinoButton(
-                    padding: const EdgeInsets.all(6),
-                    onPressed: () => showCupertinoModalPopup<void>(
-                      context: context,
-                      builder: (_) => RecurringSheet(store: store),
-                    ),
-                    child: Container(
-                      width: 40,
-                      height: 40,
-                      alignment: Alignment.center,
-                      decoration: const BoxDecoration(color: AppColors.card, shape: BoxShape.circle),
-                      child: const Icon(CupertinoIcons.repeat, size: 22, color: AppColors.blue),
-                    ),
-                  ),
-                ),
+                const LargeTitle('Spending Jar'),
 
                 SizedBox(
                   width: double.infinity,
@@ -206,9 +198,33 @@ class _JarPageState extends State<JarPage> {
                   padding: const EdgeInsets.symmetric(vertical: 16),
                   decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(12)),
                 ),
+                const SizedBox(height: 10),
+                InsetCard(
+                  padding: const EdgeInsets.fromLTRB(14, 8, 8, 8),
+                  child: Row(
+                    children: [
+                      const Icon(CupertinoIcons.repeat, size: 20, color: AppColors.blue),
+                      const SizedBox(width: 10),
+                      const Text('Repeat', style: TextStyle(fontSize: 17)),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: CupertinoSlidingSegmentedControl<int>(
+                          groupValue: _repeat == null ? -1 : _repeat!.index,
+                          children: const {
+                            -1: Padding(padding: EdgeInsets.symmetric(vertical: 5), child: Text('Never', style: TextStyle(fontSize: 13))),
+                            0: Padding(padding: EdgeInsets.symmetric(vertical: 5), child: Text('Week', style: TextStyle(fontSize: 13))),
+                            1: Padding(padding: EdgeInsets.symmetric(vertical: 5), child: Text('Month', style: TextStyle(fontSize: 13))),
+                            2: Padding(padding: EdgeInsets.symmetric(vertical: 5), child: Text('Year', style: TextStyle(fontSize: 13))),
+                          },
+                          onValueChanged: (v) => setState(() => _repeat = (v == null || v < 0) ? null : Period.values[v]),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
 
                 // ---- Categories ----
-                const GroupHeader('Tap a category to add'),
+                GroupHeader(_repeat == null ? 'Tap a category to add' : 'Tap a category to add as recurring'),
                 GridView.count(
                   crossAxisCount: 3,
                   shrinkWrap: true,
@@ -262,6 +278,30 @@ class _JarPageState extends State<JarPage> {
                     style: TextStyle(fontSize: 13, color: AppColors.muted),
                   ),
                 ),
+                if (store.recurring.isNotEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 14),
+                    child: InsetCard(
+                      child: CupertinoButton(
+                        padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                        onPressed: () => showCupertinoModalPopup<void>(
+                          context: context,
+                          builder: (_) => RecurringSheet(store: store),
+                        ),
+                        child: Row(
+                          children: [
+                            const Icon(CupertinoIcons.repeat, size: 20, color: AppColors.blue),
+                            const SizedBox(width: 10),
+                            Expanded(
+                              child: Text('Recurring spending (${store.recurring.length})',
+                                  style: const TextStyle(fontSize: 17, color: AppColors.text)),
+                            ),
+                            const Icon(CupertinoIcons.chevron_right, size: 16, color: AppColors.muted),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
               ],
             ),
           ),
