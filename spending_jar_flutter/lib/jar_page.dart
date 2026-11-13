@@ -100,8 +100,11 @@ class _JarPageState extends State<JarPage> {
       builder: (context, _) {
         final period = store.jarPeriod;
         final r = rangeFor(period, 0);
-        final items = store.between(r.start, r.end);
-        final spent = store.spentIn(r.start, r.end);
+        // Each entry with what it costs in this period: recurring payments are
+        // divided, so the list adds up to the jar and the battery.
+        final shares = store.sharesIn(r.start, r.end);
+        final items = shares.keys.toList()..sort((a, b) => b.date.compareTo(a.date));
+        final spent = shares.values.fold<double>(0, (s, v) => s + v);
         final budget = store.budgetFor(period, r.days);
         final left = budget - spent;
         final fill = budget > 0 ? (left / budget).clamp(0.0, 1.0) : 0.0;
@@ -264,6 +267,8 @@ class _JarPageState extends State<JarPage> {
                           _ExpenseRow(
                             key: ValueKey(items[i].id),
                             expense: items[i],
+                            share: shares[items[i]]!,
+                            freq: store.freqOf(items[i]),
                             category: store.categoryFor(items[i]),
                             onDelete: () => store.deleteExpense(items[i].id),
                           ),
@@ -316,8 +321,19 @@ class _JarPageState extends State<JarPage> {
 // ---------------------------------------------------------------------------
 
 class _ExpenseRow extends StatelessWidget {
-  const _ExpenseRow({super.key, required this.expense, required this.category, required this.onDelete});
+  const _ExpenseRow({
+    super.key,
+    required this.expense,
+    required this.share,
+    required this.freq,
+    required this.category,
+    required this.onDelete,
+  });
   final Expense expense;
+
+  /// What this entry costs in the period shown (less than the amount when divided).
+  final double share;
+  final Period? freq;
   final Category category;
   final VoidCallback onDelete;
 
@@ -363,11 +379,16 @@ class _ExpenseRow extends StatelessWidget {
                       ],
                     ],
                   ),
-                  Text(shortDateTime(expense.date), style: const TextStyle(fontSize: 13, color: AppColors.muted)),
+                  Text(
+                    (share - expense.amount).abs() > 0.005
+                        ? '${euro(expense.amount)} ${freq == null ? '' : freqName(freq!).toLowerCase()}, divided · ${shortDateTime(expense.date)}'
+                        : shortDateTime(expense.date),
+                    style: const TextStyle(fontSize: 13, color: AppColors.muted),
+                  ),
                 ],
               ),
             ),
-            Text(euro(expense.amount), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+            Text(euro(share), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
           ],
         ),
       ),
