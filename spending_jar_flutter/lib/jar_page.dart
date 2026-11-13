@@ -227,7 +227,11 @@ class _JarPageState extends State<JarPage> {
                 ),
 
                 // ---- Categories ----
-                GroupHeader(_repeat == null ? 'Tap a category to add' : 'Tap a category to add as recurring'),
+                GroupHeader(_repeat != null
+                    ? 'Tap a category to add as recurring'
+                    : period == Period.week
+                        ? 'Tap a category to add'
+                        : 'Tap a category to add for this ${period.word}'),
                 GridView.count(
                   crossAxisCount: 3,
                   shrinkWrap: true,
@@ -268,7 +272,7 @@ class _JarPageState extends State<JarPage> {
                             key: ValueKey(items[i].id),
                             expense: items[i],
                             share: shares[items[i]]!,
-                            freq: store.freqOf(items[i]),
+                            freq: store.spreadOf(items[i]),
                             category: store.categoryFor(items[i]),
                             onDelete: () => store.deleteExpense(items[i].id),
                           ),
@@ -381,7 +385,7 @@ class _ExpenseRow extends StatelessWidget {
                   ),
                   Text(
                     (share - expense.amount).abs() > 0.005
-                        ? '${euro(expense.amount)} ${freq == null ? '' : freqName(freq!).toLowerCase()}, divided · ${shortDateTime(expense.date)}'
+                        ? '${euro(expense.amount)} ${freq == null ? '' : (expense.id.startsWith('r_') ? freqName(freq!).toLowerCase() : 'this ${freq!.word}')}, divided · ${shortDateTime(expense.date)}'
                         : shortDateTime(expense.date),
                     style: const TextStyle(fontSize: 13, color: AppColors.muted),
                   ),

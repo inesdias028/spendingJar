@@ -39,6 +39,10 @@ class Expense {
   /// Set when a recurring payment added this, so its cost can be spread out.
   final Period? freq;
 
+  /// For a one-off spending added in the month or year view: it belongs to that
+  /// whole month or year, so smaller periods each get their part of it.
+  final Period? spread;
+
   const Expense({
     required this.id,
     required this.amount,
@@ -47,6 +51,7 @@ class Expense {
     this.label,
     required this.date,
     this.freq,
+    this.spread,
   });
 
   factory Expense.fromJson(Map<String, dynamic> j) => Expense(
@@ -57,6 +62,7 @@ class Expense {
         label: j['label'] as String?,
         date: DateTime.parse(j['date'] as String).toLocal(),
         freq: j['freq'] == null ? null : Period.values.where((p) => p.name == j['freq']).firstOrNull,
+        spread: j['spread'] == null ? null : Period.values.where((p) => p.name == j['spread']).firstOrNull,
       );
 
   Map<String, dynamic> toJson() => {
@@ -67,6 +73,7 @@ class Expense {
         'label': label,
         'date': date.toUtc().toIso8601String(),
         if (freq != null) 'freq': freq!.name,
+        if (spread != null) 'spread': spread!.name,
       };
 }
 
@@ -340,6 +347,7 @@ class Store extends ChangeNotifier {
       emoji: c.emoji,
       label: c.label,
       date: DateTime.now(),
+      spread: jarPeriod == Period.week ? null : jarPeriod,
     );
     _expCol.doc(e.id).set(e.toJson()..remove('id')).catchError(_fail);
   }
@@ -398,6 +406,9 @@ class Store extends ChangeNotifier {
     return i > 2 ? e.id.substring(2, i) : null;
   }
 
+  /// How an entry is shared out: its repeat, or the period it was added for.
+  Period? spreadOf(Expense e) => freqOf(e) ?? e.spread;
+
   Period? freqOf(Expense e) {
     if (e.freq != null) return e.freq;
     final s = seriesOf(e);
@@ -425,6 +436,19 @@ class Store extends ChangeNotifier {
     final lookBack = start.subtract(const Duration(days: 370));
     for (final e in expenses) {
       final f = freqOf(e);
+      final sp = e.spread;
+      if (f == null && sp != null && periodDays(sp) > len + 3) {
+        // One-off monthly or yearly spending: share it by days over its month or year.
+        final cs = sp == Period.month ? DateTime(e.date.year, e.date.month, 1) : DateTime(e.date.year, 1, 1);
+        final ce = sp == Period.month ? DateTime(cs.year, cs.month + 1, 1) : DateTime(cs.year + 1, 1, 1);
+        final from = start.isAfter(cs) ? start : cs;
+        final to = end.isBefore(ce) ? end : ce;
+        final overlap = (to.difference(from).inHours / 24).round();
+        if (overlap > 0) {
+          out[e] = e.amount * overlap / (ce.difference(cs).inHours / 24).round();
+        }
+        continue;
+      }
       if (f == null || periodDays(f) <= len + 0.01) {
         if (!e.date.isBefore(start) && e.date.isBefore(end)) out[e] = e.amount;
       } else if (e.date.isBefore(end) && e.date.isAfter(lookBack)) {
