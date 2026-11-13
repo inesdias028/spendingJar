@@ -36,7 +36,8 @@ class _StatsPageState extends State<StatsPage> {
                     .inDays +
                 1)
             : r.days;
-        final periodBudget = store.budgetFor(_period, r.days);
+        final extra = store.extraIn(r.start, r.end);
+        final periodBudget = store.budgetFor(_period, r.days) + extra;
         final pct = periodBudget > 0 ? total / periodBudget : 0.0;
         final diff = periodBudget - total;
         final barColor = pct < 0.8 ? AppColors.green : (pct <= 1 ? AppColors.orange : AppColors.red);
@@ -126,7 +127,7 @@ class _StatsPageState extends State<StatsPage> {
                     Row(
                       children: [
                         Expanded(
-                          child: Text('Budget ${euro(periodBudget)}',
+                          child: Text('Budget ${euro(periodBudget)}${extra > 0.005 ? ' (incl. +${euro(extra)} extra)' : ''}',
                               style: const TextStyle(fontSize: 15, color: AppColors.muted)),
                         ),
                         Text('${(pct * 100).round()}%',

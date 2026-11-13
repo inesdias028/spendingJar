@@ -105,7 +105,8 @@ class _JarPageState extends State<JarPage> {
         final shares = store.sharesIn(r.start, r.end);
         final items = shares.keys.toList()..sort((a, b) => b.date.compareTo(a.date));
         final spent = shares.values.fold<double>(0, (s, v) => s + v);
-        final budget = store.budgetFor(period, r.days);
+        final extra = store.extraIn(r.start, r.end);
+        final budget = store.budgetFor(period, r.days) + extra;
         final left = budget - spent;
         final fill = budget > 0 ? (left / budget).clamp(0.0, 1.0) : 0.0;
         final color = fill > 0.5 ? AppColors.green : (fill > 0.2 ? AppColors.orange : AppColors.red);
@@ -180,6 +181,9 @@ class _JarPageState extends State<JarPage> {
                                 ],
                               ),
                             ),
+                            if (extra > 0.005)
+                              Text('incl. +${euro(extra)} extra',
+                                  style: const TextStyle(color: AppColors.darkGreen, fontSize: 13, fontWeight: FontWeight.w600)),
                           ],
                         ),
                       ),
@@ -573,6 +577,193 @@ class _BudgetsSheetState extends State<_BudgetsSheet> {
                       '(a month is about 4.35 weeks). Recurring payments are spread the same way: '
                       '100 a month takes about 23 from each week.',
               style: TextStyle(fontSize: 13, color: _error != null ? AppColors.red : AppColors.muted),
+            ),
+          ),
+          const GroupHeader('Extra money'),
+          ListenableBuilder(
+            listenable: widget.store,
+            builder: (context, _) {
+              final now = DateTime.now();
+              final list = widget.store.extras.where((x) => x.end.isAfter(now)).toList()
+                ..sort((a, b) => a.start.compareTo(b.start));
+              return InsetCard(
+                child: Column(
+                  children: [
+                    for (final x in list) ...[
+                      Dismissible(
+                        key: ValueKey('x-${x.id}'),
+                        direction: DismissDirection.endToStart,
+                        background: Container(
+                          color: AppColors.red,
+                          alignment: Alignment.centerRight,
+                          padding: const EdgeInsets.only(right: 20),
+                          child: const Text('Remove', style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
+                        ),
+                        confirmDismiss: (_) => confirmIos(context, 'Remove +${euro(x.amount)} extra?'),
+                        onDismissed: (_) => widget.store.deleteExtra(x.id),
+                        child: Container(
+                          color: AppColors.card,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                          child: Row(
+                            children: [
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(x.note.isEmpty ? 'Extra' : x.note, style: const TextStyle(fontSize: 17)),
+                                    Text(extraWhen(x), style: const TextStyle(fontSize: 13, color: AppColors.muted)),
+                                  ],
+                                ),
+                              ),
+                              Text('+${euro(x.amount)}',
+                                  style: const TextStyle(
+                                      fontSize: 17, fontWeight: FontWeight.w600, color: AppColors.darkGreen)),
+                            ],
+                          ),
+                        ),
+                      ),
+                      const RowDivider(),
+                    ],
+                    CupertinoButton(
+                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                      onPressed: () => showCupertinoModalPopup<void>(
+                        context: context,
+                        builder: (_) => _ExtraSheet(store: widget.store),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(CupertinoIcons.add_circled_solid, color: AppColors.green, size: 22),
+                          SizedBox(width: 10),
+                          Text('Add extra money', style: TextStyle(fontSize: 17)),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+          const Padding(
+            padding: EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text(
+              'Extra money counts only for the week, month or year you add it to. Swipe left to remove one.',
+              style: TextStyle(fontSize: 13, color: AppColors.muted),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+String extraWhen(Extra x) => switch (x.period) {
+      Period.week => 'Week of ${x.start.day} ${monthNames[x.start.month - 1].substring(0, 3)}',
+      Period.month => '${monthNames[x.start.month - 1]} ${x.start.year}',
+      Period.year => 'Year ${x.start.year}',
+    };
+
+class _ExtraSheet extends StatefulWidget {
+  const _ExtraSheet({required this.store});
+  final Store store;
+
+  @override
+  State<_ExtraSheet> createState() => _ExtraSheetState();
+}
+
+class _ExtraSheetState extends State<_ExtraSheet> {
+  final _amount = TextEditingController();
+  final _note = TextEditingController();
+  late Period _period = widget.store.jarPeriod;
+  String? _error;
+
+  @override
+  void dispose() {
+    _amount.dispose();
+    _note.dispose();
+    super.dispose();
+  }
+
+  void _save() {
+    final v = parseAmount(_amount.text.trim());
+    if (v == null || v <= 0) {
+      setState(() => _error = 'Type an amount, like 300 or 25,50.');
+      return;
+    }
+    widget.store.addExtra(v, _note.text, _period);
+    Navigator.pop(context);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return IosSheet(
+      title: 'Extra Money',
+      doneLabel: 'Add',
+      onDone: _save,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InsetCard(
+            child: Column(
+              children: [
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: CupertinoTextField(
+                    controller: _amount,
+                    autofocus: true,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+                    placeholder: 'Amount, like 300',
+                    prefix: const Text('+ €', style: TextStyle(color: AppColors.darkGreen, fontSize: 17)),
+                    decoration: null,
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    style: const TextStyle(fontSize: 17),
+                    onChanged: (_) {
+                      if (_error != null) setState(() => _error = null);
+                    },
+                  ),
+                ),
+                const RowDivider(),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: CupertinoTextField(
+                    controller: _note,
+                    placeholder: 'Note, like Bonus (optional)',
+                    maxLength: 24,
+                    textCapitalization: TextCapitalization.sentences,
+                    decoration: null,
+                    padding: const EdgeInsets.symmetric(vertical: 13),
+                    style: const TextStyle(fontSize: 17),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (_error != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+              child: Text(_error!, style: const TextStyle(fontSize: 13, color: AppColors.red)),
+            ),
+          const GroupHeader('Only for'),
+          SizedBox(
+            width: double.infinity,
+            child: CupertinoSlidingSegmentedControl<Period>(
+              groupValue: _period,
+              children: const {
+                Period.week: Padding(padding: EdgeInsets.symmetric(vertical: 6), child: Text('This week')),
+                Period.month: Padding(padding: EdgeInsets.symmetric(vertical: 6), child: Text('This month')),
+                Period.year: Padding(padding: EdgeInsets.symmetric(vertical: 6), child: Text('This year')),
+              },
+              onValueChanged: (p) {
+                if (p != null) setState(() => _period = p);
+              },
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+            child: Text(
+              'Adds to ${extraWhen(Extra(id: '', amount: 0, note: '', period: _period, start: periodStart(_period, DateTime.now())))} only. '
+              '${_period == Period.week ? '' : 'Each week gets its part of it.'}',
+              style: const TextStyle(fontSize: 13, color: AppColors.muted),
             ),
           ),
         ],

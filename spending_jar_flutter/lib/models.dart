@@ -77,6 +77,37 @@ class Expense {
       };
 }
 
+/// Extra money added to the budget for one week, month or year only.
+class Extra {
+  final String id;
+  final double amount;
+  final String note;
+  final Period period;
+
+  /// First day of the week, month or year it belongs to.
+  final DateTime start;
+
+  const Extra({required this.id, required this.amount, required this.note, required this.period, required this.start});
+
+  DateTime get end => periodEnd(period, start);
+
+  factory Extra.fromJson(Map<String, dynamic> j) => Extra(
+        id: j['id'] as String,
+        amount: (j['amount'] as num).toDouble(),
+        note: (j['note'] as String?) ?? '',
+        period: Period.values.firstWhere((p) => p.name == j['period'], orElse: () => Period.month),
+        start: DateTime.parse(j['start'] as String),
+      );
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'amount': amount,
+        'note': note,
+        'period': period.name,
+        'start': '${start.year}-${two(start.month)}-${two(start.day)}',
+      };
+}
+
 /// A spending that repeats every week, month or year.
 class Recurring {
   final String id;
@@ -197,6 +228,9 @@ class Store extends ChangeNotifier {
 
   /// Spending that is added automatically on a schedule.
   List<Recurring> recurring = [];
+
+  /// One-off additions to the budget ("I got 300 extra this month").
+  List<Extra> extras = [];
   bool _ranRecurring = false;
   List<Expense> expenses = [];
   List<Category> categories = List.of(defaultCategories);
@@ -242,6 +276,9 @@ class Store extends ChangeNotifier {
           recurring = (m['recurring'] as List)
               .map((r) => Recurring.fromJson(Map<String, dynamic>.from(r as Map)))
               .toList();
+        }
+        if (m['extras'] is List) {
+          extras = (m['extras'] as List).map((x) => Extra.fromJson(Map<String, dynamic>.from(x as Map))).toList();
         }
         if (m['categories'] is List) {
           categories = (m['categories'] as List)
@@ -326,6 +363,7 @@ class Store extends ChangeNotifier {
         'budgets': {for (final p in Period.values) p.name: budgets[p]},
         'jarPeriod': jarPeriod.name,
         'recurring': recurring.map((r) => r.toJson()).toList(),
+        'extras': extras.map((x) => x.toJson()).toList(),
         'categories': categories.map((c) => c.toJson()).toList(),
         'updatedAt': FieldValue.serverTimestamp(),
       }).catchError(_fail);
@@ -471,6 +509,39 @@ class Store extends ChangeNotifier {
     return out;
   }
 
+  /// Extra budget inside [start, end): an extra for a month gives each week its part.
+  double extraIn(DateTime start, DateTime end) {
+    var total = 0.0;
+    for (final x in extras) {
+      final from = start.isAfter(x.start) ? start : x.start;
+      final to = end.isBefore(x.end) ? end : x.end;
+      final overlap = (to.difference(from).inHours / 24).round();
+      if (overlap > 0) total += x.amount * overlap / (x.end.difference(x.start).inHours / 24).round();
+    }
+    return total;
+  }
+
+  void addExtra(double amount, String note, Period period) {
+    extras = [
+      ...extras,
+      Extra(
+        id: DateTime.now().millisecondsSinceEpoch.toString(),
+        amount: amount,
+        note: note.trim(),
+        period: period,
+        start: periodStart(period, DateTime.now()),
+      ),
+    ];
+    notifyListeners();
+    _saveSettings();
+  }
+
+  void deleteExtra(String id) {
+    extras = extras.where((x) => x.id != id).toList();
+    notifyListeners();
+    _saveSettings();
+  }
+
   double spentIn(DateTime start, DateTime end) => sharesIn(start, end).values.fold(0.0, (s, v) => s + v);
 
   void setBudgets(Map<Period, double?> value) {
@@ -571,6 +642,18 @@ class Store extends ChangeNotifier {
 // ---------------------------------------------------------------------------
 
 enum Period { week, month, year }
+
+DateTime periodStart(Period p, DateTime d) => switch (p) {
+      Period.week => startOfWeek(DateTime(d.year, d.month, d.day)),
+      Period.month => DateTime(d.year, d.month, 1),
+      Period.year => DateTime(d.year, 1, 1),
+    };
+
+DateTime periodEnd(Period p, DateTime start) => switch (p) {
+      Period.week => DateTime(start.year, start.month, start.day + 7),
+      Period.month => DateTime(start.year, start.month + 1, 1),
+      Period.year => DateTime(start.year + 1, 1, 1),
+    };
 
 /// Days in each period, used to turn one budget into the others.
 double periodDays(Period p) => switch (p) {
