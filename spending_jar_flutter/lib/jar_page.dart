@@ -396,7 +396,7 @@ class _ExpenseRow extends StatelessWidget {
                 ],
               ),
             ),
-            Text(euro(share), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+            Text('-${euro(share)}', style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
           ],
         ),
       ),
