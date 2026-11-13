@@ -101,7 +101,7 @@ class _JarPageState extends State<JarPage> {
         final period = store.jarPeriod;
         final r = rangeFor(period, 0);
         final items = store.between(r.start, r.end);
-        final spent = items.fold<double>(0, (s, e) => s + e.amount);
+        final spent = store.spentIn(r.start, r.end);
         final budget = store.budgetFor(period, r.days);
         final left = budget - spent;
         final fill = budget > 0 ? (left / budget).clamp(0.0, 1.0) : 0.0;
@@ -169,7 +169,7 @@ class _JarPageState extends State<JarPage> {
                                 children: [
                                   Flexible(
                                     child: Text(
-                                      'Budget ${euro(budget)} / ${period.word}${store.isSet(period) ? '' : ' (auto)'}',
+                                      'Budget ${euro(budget)} / ${period.word}',
                                       style: const TextStyle(color: AppColors.blue, fontSize: 15),
                                     ),
                                   ),
@@ -458,12 +458,15 @@ class _BudgetsSheet extends StatefulWidget {
 }
 
 class _BudgetsSheetState extends State<_BudgetsSheet> {
+  static String _fmt(double v) {
+    final t = v.toStringAsFixed(2).replaceAll('.', ',');
+    return t.endsWith(',00') ? t.substring(0, t.length - 3) : t;
+  }
+
   late final Map<Period, TextEditingController> _ctrls = {
-    for (final p in Period.values)
-      p: TextEditingController(
-        text: widget.store.isSet(p) ? widget.store.budgets[p]!.toStringAsFixed(2).replaceAll('.', ',') : '',
-      ),
+    for (final p in Period.values) p: TextEditingController(text: _fmt(widget.store.budgetFor(p))),
   };
+  Period? _source;
   String? _error;
 
   @override
@@ -474,29 +477,36 @@ class _BudgetsSheetState extends State<_BudgetsSheet> {
     super.dispose();
   }
 
-  void _save() {
-    final out = <Period, double?>{};
-    for (final p in Period.values) {
-      final t = _ctrls[p]!.text.trim();
-      if (t.isEmpty) {
-        out[p] = null;
-        continue;
-      }
-      final v = parseAmount(t);
-      if (v == null) {
-        setState(() => _error = 'The ${p.word} budget should be an amount, like 400 or 12,50.');
-        return;
-      }
-      out[p] = v;
+  // Typing in one period fills in the others: it is the same pot.
+  void _changed(Period p, String text) {
+    _source = p;
+    final v = parseAmount(text.trim());
+    setState(() => _error = null);
+    if (v == null) return;
+    for (final q in Period.values) {
+      if (q != p) _ctrls[q]!.text = _fmt(v / periodDays(p) * periodDays(q));
     }
-    widget.store.setBudgets(out);
+  }
+
+  void _save() {
+    final p = _source;
+    if (p == null) {
+      Navigator.pop(context);
+      return;
+    }
+    final v = parseAmount(_ctrls[p]!.text.trim());
+    if (v == null || v <= 0) {
+      setState(() => _error = 'The ${p.word} budget should be an amount, like 400 or 12,50.');
+      return;
+    }
+    widget.store.setBudgets({for (final q in Period.values) q: q == p ? v : null});
     Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
     return IosSheet(
-      title: 'Budgets',
+      title: 'Budget',
       doneLabel: 'Save',
       onDone: _save,
       child: Column(
@@ -517,14 +527,10 @@ class _BudgetsSheetState extends State<_BudgetsSheet> {
                             controller: _ctrls[p],
                             keyboardType: const TextInputType.numberWithOptions(decimal: true),
                             textAlign: TextAlign.right,
-                            placeholder: 'Auto (${euro(widget.store.estimateFor(p))})',
                             prefix: const Text('€', style: TextStyle(color: AppColors.muted, fontSize: 17)),
                             decoration: null,
                             padding: const EdgeInsets.symmetric(vertical: 12),
-                            clearButtonMode: OverlayVisibilityMode.editing,
-                            onChanged: (_) {
-                              if (_error != null) setState(() => _error = null);
-                            },
+                            onChanged: (t) => _changed(p, t),
                           ),
                         ),
                       ],
@@ -537,7 +543,10 @@ class _BudgetsSheetState extends State<_BudgetsSheet> {
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
             child: Text(
-              _error ?? 'Set a goal for any period. Leave one empty and it is worked out from the others.',
+              _error ??
+                  'One pot, shown three ways. Change any period and the others follow '
+                      '(a month is about 4.35 weeks). Recurring payments are spread the same way: '
+                      '100 a month takes about 23 from each week.',
               style: TextStyle(fontSize: 13, color: _error != null ? AppColors.red : AppColors.muted),
             ),
           ),

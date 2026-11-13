@@ -25,8 +25,8 @@ class _StatsPageState extends State<StatsPage> {
       builder: (context, _) {
         final store = widget.store;
         final r = rangeFor(_period, _offset);
-        final items = store.between(r.start, r.end);
-        final total = items.fold<double>(0, (s, e) => s + e.amount);
+        final shares = store.sharesIn(r.start, r.end);
+        final total = shares.values.fold<double>(0, (s, v) => s + v);
 
         // For the current period, average only over the days so far.
         final now = DateTime.now();
@@ -37,30 +37,26 @@ class _StatsPageState extends State<StatsPage> {
                 1)
             : r.days;
         final periodBudget = store.budgetFor(_period, r.days);
-        final estimated = !store.isSet(_period);
         final pct = periodBudget > 0 ? total / periodBudget : 0.0;
         final diff = periodBudget - total;
         final barColor = pct < 0.8 ? AppColors.green : (pct <= 1 ? AppColors.orange : AppColors.red);
 
         final sums = [
-          for (final b in r.buckets)
-            items
-                .where((e) => !e.date.isBefore(b.start) && e.date.isBefore(b.end))
-                .fold<double>(0, (s, e) => s + e.amount),
+          for (final b in r.buckets) store.spentIn(b.start, b.end),
         ];
 
         final groups = <String, _Group>{};
-        for (final e in items) {
+        for (final MapEntry(key: e, value: amount) in shares.entries) {
           final c = store.categoryFor(e);
           final g = groups.putIfAbsent(e.category, () => _Group(c.emoji, c.label));
-          g.total += e.amount;
+          g.total += amount;
           g.count++;
         }
         final rows = groups.values.toList()..sort((a, b) => b.total.compareTo(a.total));
         // Recurring payments stay in their own categories above; this is just their share.
-        final recurringItems = items.where((e) => e.id.startsWith('r_'));
-        final recurringTotal = recurringItems.fold<double>(0, (s, e) => s + e.amount);
-        final recurringCount = recurringItems.length;
+        final recurringShares = shares.entries.where((x) => x.key.id.startsWith('r_'));
+        final recurringTotal = recurringShares.fold<double>(0, (s, x) => s + x.value);
+        final recurringCount = recurringShares.length;
 
         return SafeArea(
           bottom: false,
@@ -130,7 +126,7 @@ class _StatsPageState extends State<StatsPage> {
                     Row(
                       children: [
                         Expanded(
-                          child: Text('${estimated ? 'Estimated budget' : 'Budget'} ${euro(periodBudget)}',
+                          child: Text('Budget ${euro(periodBudget)}',
                               style: const TextStyle(fontSize: 15, color: AppColors.muted)),
                         ),
                         Text('${(pct * 100).round()}%',
@@ -188,7 +184,7 @@ class _StatsPageState extends State<StatsPage> {
                           children: [
                             const Text('Recurring payments', style: TextStyle(fontSize: 17)),
                             Text(
-                              '$recurringCount ${recurringCount == 1 ? 'payment' : 'payments'} · '
+                              '$recurringCount ${recurringCount == 1 ? 'payment' : 'payments'}, spread out · '
                               '${total > 0 ? (recurringTotal / total * 100).round() : 0}% of spending',
                               style: const TextStyle(fontSize: 13, color: AppColors.muted),
                             ),

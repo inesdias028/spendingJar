@@ -36,6 +36,9 @@ class Expense {
   final String? label;
   final DateTime date;
 
+  /// Set when a recurring payment added this, so its cost can be spread out.
+  final Period? freq;
+
   const Expense({
     required this.id,
     required this.amount,
@@ -43,6 +46,7 @@ class Expense {
     this.emoji,
     this.label,
     required this.date,
+    this.freq,
   });
 
   factory Expense.fromJson(Map<String, dynamic> j) => Expense(
@@ -52,6 +56,7 @@ class Expense {
         emoji: j['emoji'] as String?,
         label: j['label'] as String?,
         date: DateTime.parse(j['date'] as String).toLocal(),
+        freq: j['freq'] == null ? null : Period.values.where((p) => p.name == j['freq']).firstOrNull,
       );
 
   Map<String, dynamic> toJson() => {
@@ -61,6 +66,7 @@ class Expense {
         'emoji': emoji,
         'label': label,
         'date': date.toUtc().toIso8601String(),
+        if (freq != null) 'freq': freq!.name,
       };
 }
 
@@ -368,22 +374,80 @@ class Store extends ChangeNotifier {
     _saveSettings();
   }
 
-  /// Money per day, from the first budget that is set (week, then month, then year).
-  double get _perDay {
-    final w = budgets[Period.week], mo = budgets[Period.month], y = budgets[Period.year];
-    if (w != null) return w / 7;
-    if (mo != null) return mo * 12 / 365.25;
-    if (y != null) return y / 365.25;
+  /// The pot as money per day, from the budget you set (week, then month, then year).
+  /// There is one pot: the week, month and year budgets are the same money.
+  double get perDay {
+    for (final p in Period.values) {
+      final v = budgets[p];
+      if (v != null) return v / periodDays(p);
+    }
     return 100 / 7;
   }
 
   bool isSet(Period p) => budgets[p] != null;
 
-  /// The budget for a period of [days] days: the one you set, or an estimate.
-  double budgetFor(Period p, int days) => budgets[p] ?? _perDay * days;
+  /// The budget for a period: the same pot, measured over that period.
+  double budgetFor(Period p, [int? days]) => perDay * periodDays(p);
 
-  /// What an unset budget would be, for a typical period of that kind.
-  double estimateFor(Period p) => _perDay * (p == Period.week ? 7 : p == Period.month ? 365.25 / 12 : 365.25);
+  double estimateFor(Period p) => budgetFor(p);
+
+  /// Which recurring series an automatic entry belongs to ('r_<series>_<date>').
+  static String? seriesOf(Expense e) {
+    if (!e.id.startsWith('r_')) return null;
+    final i = e.id.lastIndexOf('_');
+    return i > 2 ? e.id.substring(2, i) : null;
+  }
+
+  Period? freqOf(Expense e) {
+    if (e.freq != null) return e.freq;
+    final s = seriesOf(e);
+    if (s == null) return null;
+    for (final r in recurring) {
+      if (r.id == s) return r.freq;
+    }
+    return null;
+  }
+
+  static DateTime _cycleEnd(DateTime from, Period f) => switch (f) {
+        Period.week => DateTime(from.year, from.month, from.day + 7),
+        Period.month => Recurring._clampDay(from.year, from.month + 1, from.day),
+        Period.year => Recurring._clampDay(from.year + 1, from.month, from.day),
+      };
+
+  /// What each expense costs inside [start, end).
+  /// A recurring payment that repeats less often than the range is long is spread
+  /// evenly: 100 a month counts as about 23 in a week and 1200 in a year.
+  Map<Expense, double> sharesIn(DateTime start, DateTime end) {
+    final n = (end.difference(start).inHours / 24).round();
+    final len = n < 28 ? n.toDouble() : (n <= 31 ? 365.25 / 12 : 365.25);
+    final out = <Expense, double>{};
+    final series = <String, List<Expense>>{};
+    final lookBack = start.subtract(const Duration(days: 370));
+    for (final e in expenses) {
+      final f = freqOf(e);
+      if (f == null || periodDays(f) <= len + 0.01) {
+        if (!e.date.isBefore(start) && e.date.isBefore(end)) out[e] = e.amount;
+      } else if (e.date.isBefore(end) && e.date.isAfter(lookBack)) {
+        series.putIfAbsent(seriesOf(e) ?? e.id, () => []).add(e);
+      }
+    }
+    for (final list in series.values) {
+      list.sort((a, b) => a.date.compareTo(b.date));
+      Expense? pick;
+      for (final e in list) {
+        final from = dayStart(e.date);
+        if (!from.isAfter(start) && _cycleEnd(from, freqOf(e)!).isAfter(start)) {
+          pick = e;
+          break;
+        }
+      }
+      pick ??= list.where((e) => !e.date.isBefore(start)).firstOrNull;
+      if (pick != null) out[pick] = pick.amount * len / periodDays(freqOf(pick)!);
+    }
+    return out;
+  }
+
+  double spentIn(DateTime start, DateTime end) => sharesIn(start, end).values.fold(0.0, (s, v) => s + v);
 
   void setBudgets(Map<Period, double?> value) {
     budgets = Map.of(value);
@@ -410,6 +474,7 @@ class Store extends ChangeNotifier {
           emoji: item.emoji,
           label: item.name.isEmpty ? item.label : item.name,
           date: DateTime(d.year, d.month, d.day, 9),
+          freq: item.freq,
         );
         _expCol.doc(id).set(e.toJson()..remove('id')).catchError(_fail);
         item = item.copyWith(next: item.after(d));
@@ -482,6 +547,13 @@ class Store extends ChangeNotifier {
 // ---------------------------------------------------------------------------
 
 enum Period { week, month, year }
+
+/// Days in each period, used to turn one budget into the others.
+double periodDays(Period p) => switch (p) {
+      Period.week => 7,
+      Period.month => 365.25 / 12,
+      Period.year => 365.25,
+    };
 
 extension PeriodWords on Period {
   /// "week", "month", "year"
