@@ -169,19 +169,24 @@ class _HomeShellState extends State<HomeShell> {
           const AccountPage(),
         ],
       ),
-      bottomNavigationBar: CupertinoTabBar(
-        currentIndex: _tab,
-        onTap: (i) => setState(() => _tab = i),
-        height: 68,
-        iconSize: 34,
-        activeColor: AppColors.blue,
-        inactiveColor: AppColors.muted,
-        backgroundColor: const Color(0xF2F9F9F9),
-        items: const [
-          BottomNavigationBarItem(icon: Icon(CupertinoIcons.home), label: 'Jar'),
-          BottomNavigationBarItem(icon: Icon(CupertinoIcons.chart_bar), label: 'Stats'),
-          BottomNavigationBarItem(icon: Icon(CupertinoIcons.person_crop_circle), label: 'Account'),
-        ],
+      // Extra space under the bar lifts the buttons away from the bottom edge.
+      bottomNavigationBar: Container(
+        color: const Color(0xFFF9F9F9),
+        padding: const EdgeInsets.only(bottom: 14),
+        child: CupertinoTabBar(
+          currentIndex: _tab,
+          onTap: (i) => setState(() => _tab = i),
+          height: 68,
+          iconSize: 34,
+          activeColor: AppColors.blue,
+          inactiveColor: AppColors.muted,
+          backgroundColor: const Color(0xFFF9F9F9),
+          items: const [
+            BottomNavigationBarItem(icon: Icon(CupertinoIcons.home), label: 'Jar'),
+            BottomNavigationBarItem(icon: Icon(CupertinoIcons.chart_bar), label: 'Stats'),
+            BottomNavigationBarItem(icon: Icon(CupertinoIcons.person_crop_circle), label: 'Account'),
+          ],
+        ),
       ),
     );
   }
