@@ -19,6 +19,10 @@ class _BalancePageState extends State<BalancePage> {
   bool _income = false;
   Period? _repeat; // null = one-off
 
+  /// How many entries the activity list shows; "Show More" adds another page.
+  static const _page = 40;
+  int _shown = _page;
+
   Store get store => widget.store;
 
   @override
@@ -81,10 +85,9 @@ class _BalancePageState extends State<BalancePage> {
     return ListenableBuilder(
       listenable: store,
       builder: (context, _) {
-        final period = store.listPeriod;
-        final r = rangeFor(period, 0);
-        final items = store.between(r.start, r.end);
-        final t = store.totalsIn(r.start, r.end);
+        // Everything, newest first. Older entries come in pages as you ask for them.
+        final all = store.entries;
+        final items = all.take(_shown).toList();
         final month = rangeFor(Period.month, 0);
         final mt = store.totalsIn(month.start, month.end);
         final cats = store.categoriesOf(income: _income);
@@ -177,13 +180,13 @@ class _BalancePageState extends State<BalancePage> {
                                     child: Text('Never', style: TextStyle(fontSize: 13))),
                                 0: Padding(
                                     padding: EdgeInsets.symmetric(vertical: 5),
-                                    child: Text('Week', style: TextStyle(fontSize: 13))),
+                                    child: Text('Weekly', style: TextStyle(fontSize: 13))),
                                 1: Padding(
                                     padding: EdgeInsets.symmetric(vertical: 5),
-                                    child: Text('Month', style: TextStyle(fontSize: 13))),
+                                    child: Text('Monthly', style: TextStyle(fontSize: 13))),
                                 2: Padding(
                                     padding: EdgeInsets.symmetric(vertical: 5),
-                                    child: Text('Year', style: TextStyle(fontSize: 13))),
+                                    child: Text('Yearly', style: TextStyle(fontSize: 13))),
                               },
                               onValueChanged: (v) =>
                                   setState(() => _repeat = (v == null || v < 0) ? null : Period.values[v]),
@@ -236,23 +239,16 @@ class _BalancePageState extends State<BalancePage> {
 
               // ---- Activity ----
               const GroupHeader('Activity'),
-              Segments<Period>(
-                value: period,
-                items: const {Period.week: 'Week', Period.month: 'Month', Period.year: 'Year'},
-                onChanged: store.setListPeriod,
-              ),
-              const SizedBox(height: 10),
-              _PeriodSummary(label: r.label, inc: t.inc, out: t.out),
               if (items.isEmpty)
                 Padding(
-                  padding: const EdgeInsets.only(top: 10),
+                  padding: EdgeInsets.zero,
                   child: InsetCard(
                     padding: const EdgeInsets.symmetric(vertical: 28),
                     child: Column(
                       children: [
                         Icon(CupertinoIcons.tray, size: 34, color: AppColors.faint.of(context)),
                         const SizedBox(height: 8),
-                        Text('No activity ${period == Period.week ? 'this week' : 'this ${period.word}'}',
+                        Text('Nothing yet. Add your first entry above.',
                             style: TextStyle(color: AppColors.muted.of(context), fontSize: 15)),
                       ],
                     ),
@@ -274,6 +270,17 @@ class _BalancePageState extends State<BalancePage> {
                         ),
                     ],
                   ),
+              if (all.length > items.length)
+                Padding(
+                  padding: const EdgeInsets.only(top: 14),
+                  child: InsetCard(
+                    child: CupertinoButton(
+                      padding: const EdgeInsets.symmetric(vertical: 13),
+                      onPressed: () => setState(() => _shown += _page),
+                      child: const Text('Show More'),
+                    ),
+                  ),
+                ),
               if (items.isNotEmpty) const GroupFooter('Swipe left on an entry to delete it.'),
             ],
           ),
@@ -395,37 +402,6 @@ class _MiniStat extends StatelessWidget {
           ),
         ),
       ],
-    );
-  }
-}
-
-class _PeriodSummary extends StatelessWidget {
-  const _PeriodSummary({required this.label, required this.inc, required this.out});
-  final String label;
-  final double inc;
-  final double out;
-
-  @override
-  Widget build(BuildContext context) {
-    final net = inc - out;
-    return InsetCard(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-      child: Row(
-        children: [
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(label, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
-                Text('${signedEuro(inc)} in · ${euro(-out)} out',
-                    style: TextStyle(fontSize: 13, color: AppColors.muted.of(context))),
-              ],
-            ),
-          ),
-          Text(signedEuro(net),
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.w700, color: AppColors.money(context, net))),
-        ],
-      ),
     );
   }
 }

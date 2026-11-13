@@ -14,8 +14,15 @@ class StatsPage extends StatefulWidget {
 }
 
 class _StatsPageState extends State<StatsPage> {
-  Period _period = Period.month;
+  /// 0 = this month, -1 = last month, …
   int _offset = 0;
+  final _scroll = ScrollController();
+
+  @override
+  void dispose() {
+    _scroll.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -23,7 +30,7 @@ class _StatsPageState extends State<StatsPage> {
       listenable: widget.store,
       builder: (context, _) {
         final store = widget.store;
-        final r = rangeFor(_period, _offset);
+        final r = rangeFor(Period.month, _offset);
         final t = store.totalsIn(r.start, r.end);
         final net = t.inc - t.out;
         final now = DateTime.now();
@@ -45,18 +52,8 @@ class _StatsPageState extends State<StatsPage> {
 
         return LargeTitlePage(
           title: 'Stats',
+          controller: _scroll,
           children: [
-            const SizedBox(height: 4),
-            Segments<Period>(
-              value: _period,
-              items: const {Period.week: 'Week', Period.month: 'Month', Period.year: 'Year'},
-              onChanged: (p) => setState(() {
-                _period = p;
-                _offset = 0;
-              }),
-            ),
-            const SizedBox(height: 6),
-
             // Period navigation
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 8),
@@ -69,8 +66,7 @@ class _StatsPageState extends State<StatsPage> {
                   ),
                   Expanded(
                     child: Text(r.label,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+                        textAlign: TextAlign.center, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
                   ),
                   CupertinoButton(
                     padding: const EdgeInsets.all(8),
@@ -114,19 +110,19 @@ class _StatsPageState extends State<StatsPage> {
               ),
             ),
 
-            const GroupHeader('Over time'),
+            const GroupHeader('Day by day'),
             _NetChart(buckets: r.buckets, sums: sums),
 
             CupertinoListSection.insetGrouped(
               header: SectionHeader('Balance'),
               children: [
                 CupertinoListTile(
-                  title: const Text('At the start'),
-                  additionalInfo: Text(signedEuro(startBalance),
-                      style: TextStyle(color: AppColors.money(context, startBalance))),
+                  title: Text('On 1 ${monthNames[r.start.month - 1].substring(0, 3)}'),
+                  additionalInfo:
+                      Text(signedEuro(startBalance), style: TextStyle(color: AppColors.money(context, startBalance))),
                 ),
                 CupertinoListTile(
-                  title: Text(_offset == 0 ? 'Now' : 'At the end'),
+                  title: Text(_offset == 0 ? 'Now' : 'End of month'),
                   additionalInfo:
                       Text(signedEuro(endBalance), style: TextStyle(color: AppColors.money(context, endBalance))),
                 ),
@@ -160,6 +156,34 @@ class _StatsPageState extends State<StatsPage> {
                     _CategoryRow(group: g, total: t.inc, top: earnRows.first.total, color: AppColors.green),
                 ],
               ),
+            CupertinoListSection.insetGrouped(
+              header: const SectionHeader('Last 12 months'),
+              children: [
+                // Months with nothing in them are left out (except this month).
+                for (var i = 0; i < 12; i++)
+                  if (i == 0 ||
+                      store.between(rangeFor(Period.month, -i).start, rangeFor(Period.month, -i).end).isNotEmpty)
+                    Builder(builder: (context) {
+                      final m = rangeFor(Period.month, -i);
+                      final mt = store.totalsIn(m.start, m.end);
+                      final mNet = mt.inc - mt.out;
+                      final selected = -i == _offset;
+                      return CupertinoListTile(
+                        backgroundColor: selected ? AppColors.fill.of(context) : null,
+                        title: Text(m.label, style: TextStyle(fontWeight: selected ? FontWeight.w600 : null)),
+                        subtitle: Text('${signedEuro(mt.inc)} in · ${euro(-mt.out)} out'),
+                        additionalInfo: Text(signedEuro(mNet),
+                            style: TextStyle(fontWeight: FontWeight.w600, color: AppColors.money(context, mNet))),
+                        trailing: const CupertinoListTileChevron(),
+                        onTap: () {
+                          setState(() => _offset = -i);
+                          _scroll.animateTo(0, duration: const Duration(milliseconds: 350), curve: Curves.easeOut);
+                        },
+                      );
+                    }),
+              ],
+            ),
+            const GroupFooter('Tap a month to see it in detail.'),
           ],
         );
       },
@@ -201,9 +225,11 @@ class _SplitBar extends StatelessWidget {
             ? Container(color: AppColors.track.of(context))
             : Row(
                 children: [
-                  if (inc > 0) Expanded(flex: (inc / total * 1000).round(), child: Container(color: AppColors.green.of(context))),
+                  if (inc > 0)
+                    Expanded(flex: (inc / total * 1000).round(), child: Container(color: AppColors.green.of(context))),
                   if (inc > 0 && out > 0) const SizedBox(width: 2),
-                  if (out > 0) Expanded(flex: (out / total * 1000).round(), child: Container(color: AppColors.red.of(context))),
+                  if (out > 0)
+                    Expanded(flex: (out / total * 1000).round(), child: Container(color: AppColors.red.of(context))),
                 ],
               ),
       ),
@@ -236,8 +262,8 @@ class _NetChart extends StatelessWidget {
           ? SizedBox(
               height: chartH,
               child: Center(
-                child: Text('Nothing in this period',
-                    style: TextStyle(color: AppColors.muted.of(context), fontSize: 15)),
+                child:
+                    Text('Nothing in this period', style: TextStyle(color: AppColors.muted.of(context), fontSize: 15)),
               ),
             )
           : Column(

@@ -4,8 +4,8 @@ A money tracker that installs on your iPhone like an app. It shows one **balance
 
 > balance = starting balance + money in − money out
 
-- **Balance** tab: your balance, this month's money in and out, a quick way to add spending or income (one-off or repeating), and your activity grouped by day.
-- **Stats** tab: what you saved (or overspent) each week, month or year, a chart of money in and out, the balance at the start and end, and totals by category.
+- **Balance** tab: your balance, this month's money in and out, a quick way to add spending or income (one-off or repeating), and all your activity grouped by day, newest first.
+- **Stats** tab: one month at a time (‹ › to move between months): what you saved or overspent, a day-by-day chart of money in and out, the balance at the start and end of the month, totals by category, and a list of the last 12 months.
 - **Account** tab: starting balance, recurring items, and sign out.
 
 The app is built with Flutter, using the iOS (Cupertino) widgets: large titles that shrink as you scroll, a translucent tab bar, inset grouped lists, iOS sheets and alerts, and automatic light/dark mode.

@@ -203,16 +203,18 @@ class HomeShell extends StatelessWidget {
 /// A tab's page: grouped background with a big title that shrinks into the
 /// navigation bar as you scroll, like Settings, Wallet or Health.
 class LargeTitlePage extends StatelessWidget {
-  const LargeTitlePage({super.key, required this.title, required this.children, this.trailing});
+  const LargeTitlePage({super.key, required this.title, required this.children, this.trailing, this.controller});
   final String title;
   final List<Widget> children;
   final Widget? trailing;
+  final ScrollController? controller;
 
   @override
   Widget build(BuildContext context) {
     return CupertinoPageScaffold(
       backgroundColor: AppColors.background,
       child: CustomScrollView(
+        controller: controller,
         slivers: [
           CupertinoSliverNavigationBar(
             largeTitle: Text(title),

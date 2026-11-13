@@ -253,9 +253,6 @@ class Store extends ChangeNotifier {
   /// What you had before you started tracking. Can be negative.
   double startBalance = 0;
 
-  /// Which period the activity list on the Balance tab shows.
-  Period listPeriod = Period.week;
-
   /// Money in or out that is added automatically on a schedule.
   List<Recurring> recurring = [];
 
@@ -292,7 +289,6 @@ class Store extends ChangeNotifier {
       final m = d.data();
       if (m != null) {
         startBalance = (m['startBalance'] as num?)?.toDouble() ?? 0;
-        listPeriod = Period.values.firstWhere((p) => p.name == m['jarPeriod'], orElse: () => Period.week);
         if (m['recurring'] is List) {
           recurring = (m['recurring'] as List)
               .map((r) => Recurring.fromJson(Map<String, dynamic>.from(r as Map)))
@@ -392,7 +388,6 @@ class Store extends ChangeNotifier {
     }
     await _userDoc.set({
       'startBalance': 0,
-      'jarPeriod': 'week',
       'recurring': [],
       'categories': cats.map((c) => c.toJson()).toList(),
       'updatedAt': FieldValue.serverTimestamp(),
@@ -414,7 +409,6 @@ class Store extends ChangeNotifier {
     if (demo) return;
     await _userDoc.update({
         'startBalance': startBalance,
-        'jarPeriod': listPeriod.name,
         'recurring': recurring.map((r) => r.toJson()).toList(),
         'categories': categories.map((c) => c.toJson()).toList(),
         'updatedAt': FieldValue.serverTimestamp(),
@@ -493,12 +487,6 @@ class Store extends ChangeNotifier {
 
   void setStartBalance(double v) {
     startBalance = v;
-    notifyListeners();
-    _saveSettings();
-  }
-
-  void setListPeriod(Period p) {
-    listPeriod = p;
     notifyListeners();
     _saveSettings();
   }
