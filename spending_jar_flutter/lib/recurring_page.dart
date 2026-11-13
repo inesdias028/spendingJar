@@ -1,22 +1,14 @@
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:flutter/services.dart';
 
 import 'main.dart';
 import 'models.dart';
 
-String freqName(Period p) => switch (p) {
-      Period.week => 'Weekly',
-      Period.month => 'Monthly',
-      Period.year => 'Yearly',
-    };
-
-String shortDate(DateTime d) => '${d.day} ${monthNames[d.month - 1].substring(0, 3)} ${d.year}';
-
-/// List of recurring spending, with Add and swipe-to-delete.
+/// List of recurring money in and out, with Add and swipe-to-delete.
 class RecurringSheet extends StatelessWidget {
-  const RecurringSheet({super.key, required this.store});
+  const RecurringSheet({super.key, required this.store, required this.controller});
   final Store store;
+  final ScrollController controller;
 
   @override
   Widget build(BuildContext context) {
@@ -24,122 +16,86 @@ class RecurringSheet extends StatelessWidget {
       listenable: store,
       builder: (context, _) {
         final items = [...store.recurring]..sort((a, b) => a.next.compareTo(b.next));
-        final perMonth = items.fold<double>(
-          0,
-          (s, r) => s + r.amount * (r.freq == Period.week ? 52 / 12 : r.freq == Period.month ? 1 : 1 / 12),
-        );
-        return IosSheet(
-          title: 'Recurring',
-          doneLabel: 'Done',
-          onDone: () => Navigator.pop(context),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              InsetCard(
-                child: Column(
-                  children: [
-                    for (var i = 0; i < items.length; i++) ...[
-                      if (i > 0) const RowDivider(indent: 62),
-                      Dismissible(
-                        key: ValueKey('rec-${items[i].id}'),
-                        direction: DismissDirection.endToStart,
-                        background: Container(
-                          color: AppColors.red,
-                          alignment: Alignment.centerRight,
-                          padding: const EdgeInsets.only(right: 20),
-                          child: const Text('Delete',
-                              style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600)),
-                        ),
-                        confirmDismiss: (_) => confirmIos(
-                          context,
-                          'Stop "${items[i].name.isEmpty ? items[i].label : items[i].name}"?',
-                          message: 'Spending already added stays in your list.',
-                          ok: 'Stop',
-                        ),
-                        onDismissed: (_) {
-                          HapticFeedback.mediumImpact();
-                          store.deleteRecurring(items[i].id);
-                        },
-                        child: _RecurringRow(item: items[i]),
-                      ),
-                    ],
-                    if (items.isNotEmpty) const RowDivider(),
-                    GestureDetector(
-                      behavior: HitTestBehavior.opaque,
-                      onTap: () => showCupertinoModalPopup<void>(
-                        context: context,
-                        builder: (_) => _AddRecurringSheet(store: store),
-                      ),
-                      child: const Padding(
-                        padding: EdgeInsets.symmetric(horizontal: 16, vertical: 14),
-                        child: Row(
-                          children: [
-                            Icon(CupertinoIcons.add_circled_solid, color: AppColors.blue, size: 24),
-                            SizedBox(width: 12),
-                            Text('Add recurring spending', style: TextStyle(fontSize: 17, color: AppColors.blue)),
-                          ],
+        final perMonth = items.fold<double>(0, (s, r) => s + r.perMonth);
+        final incomes = items.where((r) => r.income).toList();
+        final costs = items.where((r) => !r.income).toList();
+
+        Widget section(String title, List<Recurring> list) => CupertinoListSection.insetGrouped(
+              header: SectionHeader(title),
+              children: [
+                for (final r in list)
+                  Dismissible(
+                    key: ValueKey('rec-${r.id}'),
+                    direction: DismissDirection.endToStart,
+                    background: Container(
+                      color: AppColors.red.of(context),
+                      alignment: Alignment.centerRight,
+                      padding: const EdgeInsets.only(right: 22),
+                      child: const Text('Stop',
+                          style: TextStyle(color: CupertinoColors.white, fontWeight: FontWeight.w600)),
+                    ),
+                    confirmDismiss: (_) => confirmIos(
+                      context,
+                      'Stop "${r.title}"?',
+                      message: 'Entries already added stay in your list.',
+                      ok: 'Stop',
+                    ),
+                    onDismissed: (_) {
+                      HapticFeedback.mediumImpact();
+                      store.deleteRecurring(r.id);
+                    },
+                    child: CupertinoListTile(
+                      backgroundColor: AppColors.card.of(context),
+                      leadingSize: 34,
+                      leading: EmojiBadge(r.emoji, size: 34),
+                      title: Text(r.title),
+                      subtitle: Text('${freqName(r.freq)} · next ${shortDate(r.next)}'),
+                      trailing: Text(
+                        signedEuro(r.income ? r.amount : -r.amount),
+                        style: TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w600,
+                          color: (r.income ? AppColors.green : AppColors.label).of(context),
                         ),
                       ),
                     ),
-                  ],
+                  ),
+              ],
+            );
+
+        return SheetScaffold(
+          title: 'Recurring',
+          controller: controller,
+          showCancel: false,
+          children: [
+            if (incomes.isNotEmpty) section('Money in', incomes),
+            if (costs.isNotEmpty) section('Money out', costs),
+            CupertinoListSection.insetGrouped(
+              children: [
+                CupertinoListTile(
+                  leading: Icon(CupertinoIcons.plus_circle_fill, color: AppColors.blue.of(context), size: 26),
+                  title: Text('Add Recurring', style: TextStyle(color: AppColors.blue.of(context))),
+                  onTap: () => presentSheet<void>(context, (_, c) => _AddRecurringSheet(store: store, controller: c)),
                 ),
-              ),
-              Padding(
-                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-                child: Text(
-                  items.isEmpty
-                      ? 'Add things you pay regularly, like rent, the gym or Netflix. They are added to your spending automatically on each date.'
-                      : 'About ${euro(perMonth)} a month in total. Swipe left to stop one.',
-                  style: const TextStyle(fontSize: 13, color: AppColors.muted),
-                ),
-              ),
-            ],
-          ),
+              ],
+            ),
+            GroupFooter(
+              items.isEmpty
+                  ? 'Add things that happen regularly: your salary, rent, the gym or Netflix. '
+                      'They are added to your balance automatically on each date.'
+                  : 'Together about ${signedEuro(perMonth)} a month. Swipe left to stop one.',
+            ),
+          ],
         );
       },
     );
   }
 }
 
-class _RecurringRow extends StatelessWidget {
-  const _RecurringRow({required this.item});
-  final Recurring item;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      color: AppColors.card,
-      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-      child: Row(
-        children: [
-          Container(
-            width: 36,
-            height: 36,
-            alignment: Alignment.center,
-            decoration: const BoxDecoration(color: AppColors.background, shape: BoxShape.circle),
-            child: Text(item.emoji, style: const TextStyle(fontSize: 19)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(item.name.isEmpty ? item.label : item.name, style: const TextStyle(fontSize: 17)),
-                Text('${freqName(item.freq)} · next ${shortDate(item.next)}',
-                    style: const TextStyle(fontSize: 13, color: AppColors.muted)),
-              ],
-            ),
-          ),
-          Text(euro(item.amount), style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
-        ],
-      ),
-    );
-  }
-}
-
 class _AddRecurringSheet extends StatefulWidget {
-  const _AddRecurringSheet({required this.store});
+  const _AddRecurringSheet({required this.store, required this.controller});
   final Store store;
+  final ScrollController controller;
 
   @override
   State<_AddRecurringSheet> createState() => _AddRecurringSheetState();
@@ -148,7 +104,8 @@ class _AddRecurringSheet extends StatefulWidget {
 class _AddRecurringSheetState extends State<_AddRecurringSheet> {
   final _name = TextEditingController();
   final _amount = TextEditingController();
-  late String _categoryKey = widget.store.categories.isNotEmpty ? widget.store.categories.first.key : '';
+  bool _income = false;
+  String? _categoryKey;
   Period _freq = Period.month;
   DateTime _start = dayStart(DateTime.now());
   String? _error;
@@ -160,140 +117,131 @@ class _AddRecurringSheetState extends State<_AddRecurringSheet> {
     super.dispose();
   }
 
+  List<Category> get _cats => widget.store.categoriesOf(income: _income);
+
+  Category get _category {
+    final list = _cats;
+    for (final c in list) {
+      if (c.key == _categoryKey) return c;
+    }
+    return list.isNotEmpty
+        ? list.first
+        : (_income ? defaultIncomeCategories.last : defaultCategories.last);
+  }
+
   void _save() {
     final amount = parseAmount(_amount.text);
     if (amount == null) {
       setState(() => _error = 'Enter an amount, like 9,99.');
       return;
     }
-    final cats = widget.store.categories;
-    final cat = cats.where((c) => c.key == _categoryKey).isNotEmpty
-        ? cats.firstWhere((c) => c.key == _categoryKey)
-        : const Category(key: 'other', label: 'Other', emoji: '📦');
-    widget.store.addRecurring(name: _name.text, amount: amount, category: cat, freq: _freq, start: _start);
+    widget.store.addRecurring(name: _name.text, amount: amount, category: _category, freq: _freq, start: _start);
     HapticFeedback.lightImpact();
     Navigator.pop(context);
   }
 
   @override
   Widget build(BuildContext context) {
-    final cats = widget.store.categories;
-    return IosSheet(
+    final selected = _category;
+    return SheetScaffold(
       title: 'New Recurring',
+      controller: widget.controller,
       doneLabel: 'Add',
       onDone: _save,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          InsetCard(
-            child: Column(
-              children: [
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: CupertinoTextField(
-                    controller: _name,
-                    placeholder: 'Name, like Rent or Netflix',
-                    textCapitalization: TextCapitalization.sentences,
-                    decoration: null,
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                    style: const TextStyle(fontSize: 17),
-                  ),
-                ),
-                const RowDivider(),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: CupertinoTextField(
-                    controller: _amount,
-                    placeholder: 'Amount',
-                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                    inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
-                    prefix: const Text('€ ', style: TextStyle(fontSize: 17, color: AppColors.muted)),
-                    decoration: null,
-                    padding: const EdgeInsets.symmetric(vertical: 13),
-                    style: const TextStyle(fontSize: 17),
-                    onChanged: (_) {
-                      if (_error != null) setState(() => _error = null);
-                    },
-                  ),
-                ),
-              ],
+      children: [
+        const SizedBox(height: 8),
+        Segments<bool>(
+          value: _income,
+          items: const {false: 'Spending', true: 'Income'},
+          onChanged: (v) => setState(() {
+            _income = v;
+            _categoryKey = null;
+          }),
+        ),
+        CupertinoListSection.insetGrouped(
+          children: [
+            CupertinoTextField(
+              controller: _name,
+              placeholder: _income ? 'Name, like Salary' : 'Name, like Rent or Netflix',
+              textCapitalization: TextCapitalization.sentences,
+              decoration: null,
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
             ),
-          ),
-          if (_error != null)
-            Padding(
-              padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-              child: Text(_error!, style: const TextStyle(fontSize: 13, color: AppColors.red)),
-            ),
-
-          const GroupHeader('Repeats'),
-          SizedBox(
-            width: double.infinity,
-            child: CupertinoSlidingSegmentedControl<Period>(
-              groupValue: _freq,
-              children: const {
-                Period.week: Padding(padding: EdgeInsets.symmetric(vertical: 6), child: Text('Weekly')),
-                Period.month: Padding(padding: EdgeInsets.symmetric(vertical: 6), child: Text('Monthly')),
-                Period.year: Padding(padding: EdgeInsets.symmetric(vertical: 6), child: Text('Yearly')),
-              },
-              onValueChanged: (p) {
-                if (p != null) setState(() => _freq = p);
+            CupertinoTextField(
+              controller: _amount,
+              placeholder: 'Amount',
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
+              prefix: Padding(
+                padding: const EdgeInsets.only(left: 16),
+                child: Text(_income ? '+ €' : '− €',
+                    style: TextStyle(color: (_income ? AppColors.green : AppColors.muted).of(context))),
+              ),
+              decoration: null,
+              padding: const EdgeInsets.fromLTRB(8, 13, 16, 13),
+              onChanged: (_) {
+                if (_error != null) setState(() => _error = null);
               },
             ),
-          ),
+          ],
+        ),
+        if (_error != null) GroupFooter(_error!, color: AppColors.red),
 
-          const GroupHeader('Category'),
-          InsetCard(
-            padding: const EdgeInsets.all(10),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              children: [
-                for (final c in cats)
-                  GestureDetector(
-                    onTap: () => setState(() => _categoryKey = c.key),
-                    child: Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                      decoration: BoxDecoration(
-                        color: c.key == _categoryKey ? AppColors.blue : AppColors.background,
-                        borderRadius: BorderRadius.circular(18),
-                      ),
-                      child: Text(
-                        '${c.emoji} ${c.label}',
-                        style: TextStyle(
-                          fontSize: 15,
-                          color: c.key == _categoryKey ? Colors.white : AppColors.text,
-                        ),
+        const GroupHeader('Repeats'),
+        Segments<Period>(
+          value: _freq,
+          items: const {Period.week: 'Weekly', Period.month: 'Monthly', Period.year: 'Yearly'},
+          onChanged: (p) => setState(() => _freq = p),
+        ),
+
+        GroupHeader(_income ? 'Source' : 'Category'),
+        InsetCard(
+          padding: const EdgeInsets.all(10),
+          child: Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            children: [
+              for (final c in _cats)
+                GestureDetector(
+                  onTap: () => setState(() => _categoryKey = c.key),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: (c.key == selected.key ? AppColors.blue : AppColors.fill).of(context),
+                      borderRadius: BorderRadius.circular(18),
+                    ),
+                    child: Text(
+                      '${c.emoji} ${c.label}',
+                      style: TextStyle(
+                        fontSize: 15,
+                        color: c.key == selected.key ? CupertinoColors.white : AppColors.label.of(context),
                       ),
                     ),
                   ),
-              ],
-            ),
+                ),
+            ],
           ),
+        ),
 
-          const GroupHeader('First payment'),
-          InsetCard(
-            child: SizedBox(
-              height: 180,
-              child: CupertinoDatePicker(
-                mode: CupertinoDatePickerMode.date,
-                initialDateTime: _start,
-                minimumDate: DateTime(2000),
-                maximumDate: DateTime(2100),
-                onDateTimeChanged: (d) => setState(() => _start = dayStart(d)),
-              ),
+        const GroupHeader('First date'),
+        InsetCard(
+          child: SizedBox(
+            height: 180,
+            child: CupertinoDatePicker(
+              mode: CupertinoDatePickerMode.date,
+              initialDateTime: _start,
+              minimumDate: DateTime(2000),
+              maximumDate: DateTime(2100),
+              onDateTimeChanged: (d) => setState(() => _start = dayStart(d)),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
-            child: Text(
-              _start.isAfter(dayStart(DateTime.now()))
-                  ? 'It will be added for the first time on ${shortDate(_start)}.'
-                  : 'Payments from ${shortDate(_start)} until today are added straight away.',
-              style: const TextStyle(fontSize: 13, color: AppColors.muted),
-            ),
-          ),
-        ],
-      ),
+        ),
+        GroupFooter(
+          _start.isAfter(dayStart(DateTime.now()))
+              ? 'It will be added for the first time on ${shortDate(_start)}.'
+              : 'Everything from ${shortDate(_start)} until today is added straight away.',
+        ),
+      ],
     );
   }
 }

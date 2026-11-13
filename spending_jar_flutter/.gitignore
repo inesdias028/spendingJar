@@ -1,0 +1,11 @@
+# Made by `flutter create` / `flutter build` (the GitHub workflow creates them itself)
+.dart_tool/
+.flutter-plugins-dependencies
+.idea/
+*.iml
+.metadata
+build/
+web/
+pubspec.lock
+README.md
+test/

@@ -2,7 +2,6 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -15,104 +14,79 @@ class Category {
   final String label;
   final String emoji;
 
-  const Category({required this.key, required this.label, required this.emoji});
+  /// true = a kind of money coming in (salary, gift…), false = spending.
+  final bool income;
+
+  const Category({required this.key, required this.label, required this.emoji, this.income = false});
 
   factory Category.fromJson(Map<String, dynamic> j) => Category(
         key: j['key'] as String,
         label: j['label'] as String,
         emoji: (j['emoji'] as String?) ?? '🏷️',
+        income: (j['income'] as bool?) ?? false,
       );
 
-  Map<String, dynamic> toJson() => {'key': key, 'label': label, 'emoji': emoji};
+  Map<String, dynamic> toJson() => {'key': key, 'label': label, 'emoji': emoji, if (income) 'income': true};
 }
 
-class Expense {
+/// One movement of money: spending (out) or income (in).
+class Entry {
   final String id;
+
+  /// Always positive. [income] says which way it goes.
   final double amount;
+  final bool income;
   final String category;
+
   // A copy of the category's look, so old entries still show correctly
   // after their category is deleted.
   final String? emoji;
   final String? label;
   final DateTime date;
 
-  /// Set when a recurring payment added this, so its cost can be spread out.
-  final Period? freq;
-
-  /// For a one-off spending added in the month or year view: it belongs to that
-  /// whole month or year, so smaller periods each get their part of it.
-  final Period? spread;
-
-  const Expense({
+  const Entry({
     required this.id,
     required this.amount,
+    required this.income,
     required this.category,
     this.emoji,
     this.label,
     required this.date,
-    this.freq,
-    this.spread,
   });
 
-  factory Expense.fromJson(Map<String, dynamic> j) => Expense(
+  /// + for income, − for spending.
+  double get signed => income ? amount : -amount;
+
+  /// Added automatically by a recurring item ('r_<series>_<date>').
+  bool get isRecurring => id.startsWith('r_');
+
+  factory Entry.fromJson(Map<String, dynamic> j) => Entry(
         id: j['id'].toString(),
         amount: (j['amount'] as num).toDouble(),
+        income: (j['income'] as bool?) ?? false,
         category: (j['category'] as String?) ?? 'other',
         emoji: j['emoji'] as String?,
         label: j['label'] as String?,
         date: DateTime.parse(j['date'] as String).toLocal(),
-        freq: j['freq'] == null ? null : Period.values.where((p) => p.name == j['freq']).firstOrNull,
-        spread: j['spread'] == null ? null : Period.values.where((p) => p.name == j['spread']).firstOrNull,
       );
 
   Map<String, dynamic> toJson() => {
         'id': id,
         'amount': amount,
+        if (income) 'income': true,
         'category': category,
         'emoji': emoji,
         'label': label,
         'date': date.toUtc().toIso8601String(),
-        if (freq != null) 'freq': freq!.name,
-        if (spread != null) 'spread': spread!.name,
       };
 }
 
-/// Extra money added to the budget for one week, month or year only.
-class Extra {
-  final String id;
-  final double amount;
-  final String note;
-  final Period period;
-
-  /// First day of the week, month or year it belongs to.
-  final DateTime start;
-
-  const Extra({required this.id, required this.amount, required this.note, required this.period, required this.start});
-
-  DateTime get end => periodEnd(period, start);
-
-  factory Extra.fromJson(Map<String, dynamic> j) => Extra(
-        id: j['id'] as String,
-        amount: (j['amount'] as num).toDouble(),
-        note: (j['note'] as String?) ?? '',
-        period: Period.values.firstWhere((p) => p.name == j['period'], orElse: () => Period.month),
-        start: DateTime.parse(j['start'] as String),
-      );
-
-  Map<String, dynamic> toJson() => {
-        'id': id,
-        'amount': amount,
-        'note': note,
-        'period': period.name,
-        'start': '${start.year}-${two(start.month)}-${two(start.day)}',
-      };
-}
-
-/// A spending that repeats every week, month or year.
+/// Money in or out that repeats every week, month or year.
 class Recurring {
   final String id;
   final String name;
   final double amount;
+  final bool income;
   final String category;
   final String emoji;
   final String label;
@@ -128,6 +102,7 @@ class Recurring {
     required this.id,
     required this.name,
     required this.amount,
+    required this.income,
     required this.category,
     required this.emoji,
     required this.label,
@@ -136,10 +111,17 @@ class Recurring {
     required this.next,
   });
 
+  String get title => name.isEmpty ? label : name;
+
+  /// Roughly what it adds (+) or takes (−) each month.
+  double get perMonth =>
+      (income ? amount : -amount) * (freq == Period.week ? 52 / 12 : freq == Period.month ? 1 : 1 / 12);
+
   Recurring copyWith({DateTime? next}) => Recurring(
         id: id,
         name: name,
         amount: amount,
+        income: income,
         category: category,
         emoji: emoji,
         label: label,
@@ -170,6 +152,7 @@ class Recurring {
         id: j['id'] as String,
         name: (j['name'] as String?) ?? '',
         amount: (j['amount'] as num).toDouble(),
+        income: (j['income'] as bool?) ?? false,
         category: (j['category'] as String?) ?? 'other',
         emoji: (j['emoji'] as String?) ?? '🏷️',
         label: (j['label'] as String?) ?? 'Other',
@@ -182,6 +165,7 @@ class Recurring {
         'id': id,
         'name': name,
         'amount': amount,
+        if (income) 'income': true,
         'category': category,
         'emoji': emoji,
         'label': label,
@@ -200,40 +184,83 @@ const defaultCategories = <Category>[
   Category(key: 'other', label: 'Other', emoji: '📦'),
 ];
 
+const defaultIncomeCategories = <Category>[
+  Category(key: 'salary', label: 'Salary', emoji: '💼', income: true),
+  Category(key: 'gift_in', label: 'Gift', emoji: '🎁', income: true),
+  Category(key: 'refund', label: 'Refund', emoji: '↩️', income: true),
+  Category(key: 'sold', label: 'Sold', emoji: '🏷️', income: true),
+  Category(key: 'income_other', label: 'Other', emoji: '💰', income: true),
+];
+
 const suggestedEmojis = ['🏋️', '🐶', '💊', '🎁', '✈️', '🏠', '📚', '🍺', '💇', '🎮', '🚗', '👶'];
+const suggestedIncomeEmojis = ['💼', '💶', '🏦', '📈', '🧾', '🎓', '🤝', '🏆'];
 
 // ---------------------------------------------------------------------------
 // Store: holds one user's data and keeps it in sync with Firebase.
 //
 // Firestore layout (each user can only see their own, see firestore.rules):
-//   users/{uid}                 -> { budget, categories, updatedAt }
-//   users/{uid}/expenses/{id}   -> { amount, category, emoji, label, date }
+//   users/{uid}                 -> { startBalance, categories, recurring, updatedAt }
+//   users/{uid}/expenses/{id}   -> { amount, income?, category, emoji, label, date }
+//
+// Balance = startBalance + everything in − everything out.
 // ---------------------------------------------------------------------------
 
 class Store extends ChangeNotifier {
-  Store(this.uid) {
+  Store(this.uid) : demo = false {
     _start();
+  }
+
+  /// Sample data that stays in memory, with no Firebase. Used by `--dart-define=DEMO=true`
+  /// to try the app or take screenshots without signing in.
+  Store.demo()
+      : uid = 'demo',
+        demo = true {
+    final now = DateTime.now();
+    DateTime ago(int days, int h, [int m = 0]) => DateTime(now.year, now.month, now.day - days, h, m);
+    var n = 0;
+    Entry e(double amount, Category c, DateTime d) =>
+        Entry(id: 'demo${n++}', amount: amount, income: c.income, category: c.key, emoji: c.emoji, label: c.label, date: d);
+    final cat = {for (final c in categories) c.key: c};
+    startBalance = 350;
+    entries = [
+      e(4.5, cat['coffee']!, ago(0, 8, 40)),
+      e(12.9, cat['food']!, ago(0, 13, 5)),
+      e(25, cat['refund']!, ago(1, 18, 20)),
+      e(2.1, cat['transport']!, ago(1, 9)),
+      e(39.99, cat['shopping']!, ago(2, 17, 30)),
+      e(18, cat['fun']!, ago(3, 21)),
+      e(1450, cat['salary']!, ago(now.day - 1, 9)),
+      e(64.3, cat['food']!, ago(6, 11)),
+      e(3.2, cat['coffee']!, ago(8, 8)),
+      e(50, cat['gift_in']!, ago(12, 15)),
+      e(120, cat['shopping']!, ago(15, 16)),
+      e(7.5, cat['coffee']!, ago(20, 10)),
+      e(1450, cat['salary']!, DateTime(now.year, now.month - 1, 1, 9)),
+      e(780, cat['other']!, DateTime(now.year, now.month - 1, 2, 9)),
+      e(210, cat['food']!, DateTime(now.year, now.month - 1, 15, 9)),
+    ]..sort((a, b) => b.date.compareTo(a.date));
+    ready = true;
   }
 
   final String uid;
 
+  /// true for [Store.demo]: nothing is sent to Firebase.
+  final bool demo;
+
   // Data saved on this device by the earlier, no-login version of the app.
   static const _localKey = 'spending-jar-v1';
 
-  /// Budget for each period. null = not set (worked out from the others).
-  Map<Period, double?> budgets = {Period.week: 100, Period.month: null, Period.year: null};
+  /// What you had before you started tracking. Can be negative.
+  double startBalance = 0;
 
-  /// Which period the jar on the main screen tracks.
-  Period jarPeriod = Period.week;
+  /// Which period the activity list on the Balance tab shows.
+  Period listPeriod = Period.week;
 
-  /// Spending that is added automatically on a schedule.
+  /// Money in or out that is added automatically on a schedule.
   List<Recurring> recurring = [];
 
-  /// One-off additions to the budget ("I got 300 extra this month").
-  List<Extra> extras = [];
-  bool _ranRecurring = false;
-  List<Expense> expenses = [];
-  List<Category> categories = List.of(defaultCategories);
+  List<Entry> entries = [];
+  List<Category> categories = [...defaultCategories, ...defaultIncomeCategories];
 
   /// True once the first data has arrived from Firebase.
   bool ready = false;
@@ -241,10 +268,13 @@ class Store extends ChangeNotifier {
   /// Set if Firebase refused or failed (shown on screen instead of the app).
   String? error;
 
-  final _db = FirebaseFirestore.instance;
+  bool _ranRecurring = false;
+  bool _migratingExtras = false;
+
+  late final _db = FirebaseFirestore.instance;
   StreamSubscription<DocumentSnapshot<Map<String, dynamic>>>? _userSub;
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _expSub;
-  bool _gotUser = false, _gotExpenses = false;
+  bool _gotUser = false, _gotEntries = false;
 
   DocumentReference<Map<String, dynamic>> get _userDoc => _db.collection('users').doc(uid);
   CollectionReference<Map<String, dynamic>> get _expCol => _userDoc.collection('expenses');
@@ -261,45 +291,39 @@ class Store extends ChangeNotifier {
     _userSub = _userDoc.snapshots().listen((d) {
       final m = d.data();
       if (m != null) {
-        final bm = m['budgets'];
-        if (bm is Map) {
-          budgets = {for (final p in Period.values) p: (bm[p.name] as num?)?.toDouble()};
-        } else {
-          budgets = {
-            Period.week: (m['budget'] as num?)?.toDouble() ?? 100,
-            Period.month: null,
-            Period.year: null,
-          };
-        }
-        jarPeriod = Period.values.firstWhere((p) => p.name == m['jarPeriod'], orElse: () => Period.week);
+        startBalance = (m['startBalance'] as num?)?.toDouble() ?? 0;
+        listPeriod = Period.values.firstWhere((p) => p.name == m['jarPeriod'], orElse: () => Period.week);
         if (m['recurring'] is List) {
           recurring = (m['recurring'] as List)
               .map((r) => Recurring.fromJson(Map<String, dynamic>.from(r as Map)))
               .toList();
-        }
-        if (m['extras'] is List) {
-          extras = (m['extras'] as List).map((x) => Extra.fromJson(Map<String, dynamic>.from(x as Map))).toList();
         }
         if (m['categories'] is List) {
           categories = (m['categories'] as List)
               .map((c) => Category.fromJson(Map<String, dynamic>.from(c as Map)))
               .toList();
         }
+        // Accounts from before income existed get the default income categories.
+        if (!categories.any((c) => c.income)) {
+          categories = [...categories, ...defaultIncomeCategories];
+        }
+        final extras = m['extras'];
+        if (extras is List && extras.isNotEmpty) _migrateExtras(extras);
       }
       _gotUser = true;
       _maybeReady();
     }, onError: _fail);
 
     _expSub = _expCol.snapshots().listen((q) {
-      expenses = q.docs.map((d) => Expense.fromJson({...d.data(), 'id': d.id})).toList()
+      entries = q.docs.map((d) => Entry.fromJson({...d.data(), 'id': d.id})).toList()
         ..sort((a, b) => b.date.compareTo(a.date));
-      _gotExpenses = true;
+      _gotEntries = true;
       _maybeReady();
     }, onError: _fail);
   }
 
   void _maybeReady() {
-    if (_gotUser && _gotExpenses) ready = true;
+    if (_gotUser && _gotEntries) ready = true;
     notifyListeners();
     if (ready && !_ranRecurring) {
       _ranRecurring = true;
@@ -312,61 +336,90 @@ class Store extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// The old budget version had "extra money" added to a week, month or year.
+  /// With a balance, that is simply income, so it becomes income entries once.
+  Future<void> _migrateExtras(List extras) async {
+    if (_migratingExtras) return;
+    _migratingExtras = true;
+    try {
+      final batch = _db.batch();
+      for (final raw in extras) {
+        final x = Map<String, dynamic>.from(raw as Map);
+        final start = DateTime.parse(x['start'] as String);
+        final note = ((x['note'] as String?) ?? '').trim();
+        final e = Entry(
+          id: 'x_${x['id']}',
+          amount: (x['amount'] as num).toDouble(),
+          income: true,
+          category: 'income_other',
+          emoji: '💰',
+          label: note.isEmpty ? 'Extra money' : note,
+          date: DateTime(start.year, start.month, start.day, 12),
+        );
+        // Fixed id: running this twice (two devices) writes the same entry.
+        batch.set(_expCol.doc(e.id), e.toJson()..remove('id'));
+      }
+      batch.update(_userDoc, {'extras': []});
+      await batch.commit();
+    } catch (e) {
+      _fail(e);
+    } finally {
+      _migratingExtras = false;
+    }
+  }
+
   /// A brand-new account: copy anything saved on this device into it.
   Future<void> _firstTimeSetup() async {
     final prefs = await SharedPreferences.getInstance();
     final raw = prefs.getString(_localKey);
-    var b = 100.0;
-    var cats = List<Category>.of(defaultCategories);
-    var exps = <Expense>[];
+    var cats = <Category>[...defaultCategories, ...defaultIncomeCategories];
+    var list = <Entry>[];
     if (raw != null) {
       try {
         final m = Map<String, dynamic>.from(jsonDecode(raw) as Map);
-        b = (m['budget'] as num?)?.toDouble() ?? 100;
         if (m['categories'] is List) {
-          cats = (m['categories'] as List)
-              .map((c) => Category.fromJson(Map<String, dynamic>.from(c as Map)))
-              .toList();
+          cats = [
+            ...(m['categories'] as List).map((c) => Category.fromJson(Map<String, dynamic>.from(c as Map))),
+            ...defaultIncomeCategories,
+          ];
         }
-        exps = ((m['expenses'] as List?) ?? [])
-            .map((e) => Expense.fromJson(Map<String, dynamic>.from(e as Map)))
+        list = ((m['expenses'] as List?) ?? [])
+            .map((e) => Entry.fromJson(Map<String, dynamic>.from(e as Map)))
             .toList();
       } catch (_) {
         // Unreadable local data: start fresh.
       }
     }
-    await _writeAll(b, cats, exps);
-    if (raw != null) await prefs.remove(_localKey);
-  }
-
-  /// Writes a new account's starting data.
-  Future<void> _writeAll(double b, List<Category> cats, List<Expense> exps) async {
     await _userDoc.set({
-      'budgets': {'week': b, 'month': null, 'year': null},
+      'startBalance': 0,
       'jarPeriod': 'week',
       'recurring': [],
       'categories': cats.map((c) => c.toJson()).toList(),
       'updatedAt': FieldValue.serverTimestamp(),
     });
-    for (var i = 0; i < exps.length; i += 400) {
+    for (var i = 0; i < list.length; i += 400) {
       final batch = _db.batch();
-      for (final e in exps.skip(i).take(400)) {
+      for (final e in list.skip(i).take(400)) {
         batch.set(_expCol.doc(_safeId(e.id)), e.toJson()..remove('id'));
       }
       await batch.commit();
     }
+    if (raw != null) await prefs.remove(_localKey);
   }
 
-  static String _safeId(String id) => id.isEmpty ? DateTime.now().microsecondsSinceEpoch.toString() : id.replaceAll('/', '_');
+  static String _safeId(String id) =>
+      id.isEmpty ? DateTime.now().microsecondsSinceEpoch.toString() : id.replaceAll('/', '_');
 
-  Future<void> _saveSettings() => _userDoc.update({
-        'budgets': {for (final p in Period.values) p.name: budgets[p]},
-        'jarPeriod': jarPeriod.name,
+  Future<void> _saveSettings() async {
+    if (demo) return;
+    await _userDoc.update({
+        'startBalance': startBalance,
+        'jarPeriod': listPeriod.name,
         'recurring': recurring.map((r) => r.toJson()).toList(),
-        'extras': extras.map((x) => x.toJson()).toList(),
         'categories': categories.map((c) => c.toJson()).toList(),
         'updatedAt': FieldValue.serverTimestamp(),
       }).catchError(_fail);
+  }
 
   @override
   void dispose() {
@@ -375,30 +428,86 @@ class Store extends ChangeNotifier {
     super.dispose();
   }
 
+  // ---- numbers ----
+
+  /// Your balance right now: what you started with, plus all income, minus all spending.
+  double get balance => entries.fold(startBalance, (s, e) => s + e.signed);
+
+  /// Balance just before [t].
+  double balanceAt(DateTime t) =>
+      entries.where((e) => e.date.isBefore(t)).fold(startBalance, (s, e) => s + e.signed);
+
+  /// Money in and money out inside [start, end).
+  ({double inc, double out}) totalsIn(DateTime start, DateTime end) {
+    var inc = 0.0, out = 0.0;
+    for (final e in entries) {
+      if (e.date.isBefore(start) || !e.date.isBefore(end)) continue;
+      if (e.income) {
+        inc += e.amount;
+      } else {
+        out += e.amount;
+      }
+    }
+    return (inc: inc, out: out);
+  }
+
+  List<Entry> between(DateTime start, DateTime end) =>
+      entries.where((e) => !e.date.isBefore(start) && e.date.isBefore(end)).toList()
+        ..sort((a, b) => b.date.compareTo(a.date));
+
+  List<Category> categoriesOf({required bool income}) => categories.where((c) => c.income == income).toList();
+
+  /// The category to show for an entry (falls back to its saved copy).
+  Category categoryFor(Entry e) {
+    for (final c in categories) {
+      if (c.key == e.category) return c;
+    }
+    return Category(key: e.category, label: e.label ?? 'Deleted', emoji: e.emoji ?? '🏷️', income: e.income);
+  }
+
+  /// The name to show for an entry: a recurring item's own name, or its category.
+  String titleFor(Entry e) => e.isRecurring && (e.label?.isNotEmpty ?? false) ? e.label! : categoryFor(e).label;
+
   // ---- actions (the screen updates straight away; Firebase syncs behind) ----
 
-  void addExpense(double amount, Category c) {
-    final e = Expense(
+  void addEntry(double amount, Category c) {
+    final e = Entry(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       amount: amount,
+      income: c.income,
       category: c.key,
       emoji: c.emoji,
       label: c.label,
       date: DateTime.now(),
-      spread: jarPeriod == Period.week ? null : jarPeriod,
     );
-    _expCol.doc(e.id).set(e.toJson()..remove('id')).catchError(_fail);
+    entries = [e, ...entries];
+    notifyListeners();
+    if (!demo) _expCol.doc(e.id).set(e.toJson()..remove('id')).catchError(_fail);
   }
 
-  void deleteExpense(String id) {
-    _expCol.doc(id).delete().catchError(_fail);
+  void deleteEntry(String id) {
+    entries = entries.where((e) => e.id != id).toList();
+    notifyListeners();
+    if (!demo) _expCol.doc(id).delete().catchError(_fail);
+  }
+
+  void setStartBalance(double v) {
+    startBalance = v;
+    notifyListeners();
+    _saveSettings();
+  }
+
+  void setListPeriod(Period p) {
+    listPeriod = p;
+    notifyListeners();
+    _saveSettings();
   }
 
   /// Returns an error message, or null if the category was added.
-  String? addCategory(String label, String emoji) {
+  String? addCategory(String label, String emoji, {required bool income}) {
     final name = label.trim();
     if (name.isEmpty) return 'Give your category a name';
-    if (categories.any((c) => c.label.toLowerCase() == name.toLowerCase())) {
+    if (categories.any((c) => c.income == income && c.label.toLowerCase() == name.toLowerCase())) {
       return 'You already have that category';
     }
     categories = [
@@ -406,7 +515,8 @@ class Store extends ChangeNotifier {
       Category(
         key: 'c${DateTime.now().millisecondsSinceEpoch}',
         label: name,
-        emoji: emoji.trim().isEmpty ? '🏷️' : emoji.trim(),
+        emoji: emoji.trim().isEmpty ? (income ? '💰' : '🏷️') : emoji.trim(),
+        income: income,
       ),
     ];
     notifyListeners();
@@ -420,137 +530,7 @@ class Store extends ChangeNotifier {
     _saveSettings();
   }
 
-  /// The pot as money per day, from the budget you set (week, then month, then year).
-  /// There is one pot: the week, month and year budgets are the same money.
-  double get perDay {
-    for (final p in Period.values) {
-      final v = budgets[p];
-      if (v != null) return v / periodDays(p);
-    }
-    return 100 / 7;
-  }
-
-  bool isSet(Period p) => budgets[p] != null;
-
-  /// The budget for a period: the same pot, measured over that period.
-  double budgetFor(Period p, [int? days]) => perDay * periodDays(p);
-
-  double estimateFor(Period p) => budgetFor(p);
-
-  /// Which recurring series an automatic entry belongs to ('r_<series>_<date>').
-  static String? seriesOf(Expense e) {
-    if (!e.id.startsWith('r_')) return null;
-    final i = e.id.lastIndexOf('_');
-    return i > 2 ? e.id.substring(2, i) : null;
-  }
-
-  /// How an entry is shared out: its repeat, or the period it was added for.
-  Period? spreadOf(Expense e) => freqOf(e) ?? e.spread;
-
-  Period? freqOf(Expense e) {
-    if (e.freq != null) return e.freq;
-    final s = seriesOf(e);
-    if (s == null) return null;
-    for (final r in recurring) {
-      if (r.id == s) return r.freq;
-    }
-    return null;
-  }
-
-  static DateTime _cycleEnd(DateTime from, Period f) => switch (f) {
-        Period.week => DateTime(from.year, from.month, from.day + 7),
-        Period.month => Recurring._clampDay(from.year, from.month + 1, from.day),
-        Period.year => Recurring._clampDay(from.year + 1, from.month, from.day),
-      };
-
-  /// What each expense costs inside [start, end).
-  /// A recurring payment that repeats less often than the range is long is spread
-  /// evenly: 100 a month counts as about 23 in a week and 1200 in a year.
-  Map<Expense, double> sharesIn(DateTime start, DateTime end) {
-    final n = (end.difference(start).inHours / 24).round();
-    final len = n < 28 ? n.toDouble() : (n <= 31 ? 365.25 / 12 : 365.25);
-    final out = <Expense, double>{};
-    final series = <String, List<Expense>>{};
-    final lookBack = start.subtract(const Duration(days: 370));
-    for (final e in expenses) {
-      final f = freqOf(e);
-      final sp = e.spread;
-      if (f == null && sp != null && periodDays(sp) > len + 3) {
-        // One-off monthly or yearly spending: share it by days over its month or year.
-        final cs = sp == Period.month ? DateTime(e.date.year, e.date.month, 1) : DateTime(e.date.year, 1, 1);
-        final ce = sp == Period.month ? DateTime(cs.year, cs.month + 1, 1) : DateTime(cs.year + 1, 1, 1);
-        final from = start.isAfter(cs) ? start : cs;
-        final to = end.isBefore(ce) ? end : ce;
-        final overlap = (to.difference(from).inHours / 24).round();
-        if (overlap > 0) {
-          out[e] = e.amount * overlap / (ce.difference(cs).inHours / 24).round();
-        }
-        continue;
-      }
-      if (f == null || periodDays(f) <= len + 0.01) {
-        if (!e.date.isBefore(start) && e.date.isBefore(end)) out[e] = e.amount;
-      } else if (e.date.isBefore(end) && e.date.isAfter(lookBack)) {
-        series.putIfAbsent(seriesOf(e) ?? e.id, () => []).add(e);
-      }
-    }
-    for (final list in series.values) {
-      list.sort((a, b) => a.date.compareTo(b.date));
-      Expense? pick;
-      for (final e in list) {
-        final from = dayStart(e.date);
-        if (!from.isAfter(start) && _cycleEnd(from, freqOf(e)!).isAfter(start)) {
-          pick = e;
-          break;
-        }
-      }
-      pick ??= list.where((e) => !e.date.isBefore(start)).firstOrNull;
-      if (pick != null) out[pick] = pick.amount * len / periodDays(freqOf(pick)!);
-    }
-    return out;
-  }
-
-  /// Extra budget inside [start, end): an extra for a month gives each week its part.
-  double extraIn(DateTime start, DateTime end) {
-    var total = 0.0;
-    for (final x in extras) {
-      final from = start.isAfter(x.start) ? start : x.start;
-      final to = end.isBefore(x.end) ? end : x.end;
-      final overlap = (to.difference(from).inHours / 24).round();
-      if (overlap > 0) total += x.amount * overlap / (x.end.difference(x.start).inHours / 24).round();
-    }
-    return total;
-  }
-
-  void addExtra(double amount, String note, Period period) {
-    extras = [
-      ...extras,
-      Extra(
-        id: DateTime.now().millisecondsSinceEpoch.toString(),
-        amount: amount,
-        note: note.trim(),
-        period: period,
-        start: periodStart(period, DateTime.now()),
-      ),
-    ];
-    notifyListeners();
-    _saveSettings();
-  }
-
-  void deleteExtra(String id) {
-    extras = extras.where((x) => x.id != id).toList();
-    notifyListeners();
-    _saveSettings();
-  }
-
-  double spentIn(DateTime start, DateTime end) => sharesIn(start, end).values.fold(0.0, (s, v) => s + v);
-
-  void setBudgets(Map<Period, double?> value) {
-    budgets = Map.of(value);
-    notifyListeners();
-    _saveSettings();
-  }
-
-  /// Adds any recurring spending that has come due (up to today).
+  /// Adds any recurring money in or out that has come due (up to today).
   /// Safe to run on several devices: each date gets one fixed id.
   Future<void> runRecurring() async {
     final today = dayStart(DateTime.now());
@@ -562,16 +542,20 @@ class Store extends ChangeNotifier {
       while (!item.next.isAfter(today) && guard < 500) {
         final d = item.next;
         final id = 'r_${item.id}_${d.year}${two(d.month)}${two(d.day)}';
-        final e = Expense(
+        final e = Entry(
           id: id,
           amount: item.amount,
+          income: item.income,
           category: item.category,
           emoji: item.emoji,
-          label: item.name.isEmpty ? item.label : item.name,
+          label: item.title,
           date: DateTime(d.year, d.month, d.day, 9),
-          freq: item.freq,
         );
-        _expCol.doc(id).set(e.toJson()..remove('id')).catchError(_fail);
+        if (demo) {
+          entries = [e, ...entries.where((x) => x.id != id)]..sort((a, b) => b.date.compareTo(a.date));
+        } else {
+          _expCol.doc(id).set(e.toJson()..remove('id')).catchError(_fail);
+        }
         item = item.copyWith(next: item.after(d));
         changed = true;
         guard++;
@@ -599,6 +583,7 @@ class Store extends ChangeNotifier {
         id: DateTime.now().millisecondsSinceEpoch.toString(),
         name: name.trim(),
         amount: amount,
+        income: category.income,
         category: category.key,
         emoji: category.emoji,
         label: category.label,
@@ -616,25 +601,6 @@ class Store extends ChangeNotifier {
     notifyListeners();
     _saveSettings();
   }
-
-  void setJarPeriod(Period p) {
-    jarPeriod = p;
-    notifyListeners();
-    _saveSettings();
-  }
-
-  /// The category to show for an expense (falls back to its saved copy).
-  Category categoryFor(Expense e) {
-    for (final c in categories) {
-      if (c.key == e.category) return c;
-    }
-    return Category(key: e.category, label: e.label ?? 'Deleted', emoji: e.emoji ?? '🏷️');
-  }
-
-  List<Expense> between(DateTime start, DateTime end) => expenses
-      .where((e) => !e.date.isBefore(start) && e.date.isBefore(end))
-      .toList()
-    ..sort((a, b) => b.date.compareTo(a.date));
 }
 
 // ---------------------------------------------------------------------------
@@ -653,13 +619,6 @@ DateTime periodEnd(Period p, DateTime start) => switch (p) {
       Period.week => DateTime(start.year, start.month, start.day + 7),
       Period.month => DateTime(start.year, start.month + 1, 1),
       Period.year => DateTime(start.year + 1, 1, 1),
-    };
-
-/// Days in each period, used to turn one budget into the others.
-double periodDays(Period p) => switch (p) {
-      Period.week => 7,
-      Period.month => 365.25 / 12,
-      Period.year => 365.25,
     };
 
 extension PeriodWords on Period {
@@ -681,11 +640,6 @@ class PeriodRange {
   final DateTime end;
   final List<Bucket> buckets;
   final String label;
-
-  /// Whole days in the period (DST-safe).
-  int get days => DateTime.utc(end.year, end.month, end.day)
-      .difference(DateTime.utc(start.year, start.month, start.day))
-      .inDays;
 }
 
 PeriodRange rangeFor(Period p, int offset) {
@@ -705,9 +659,9 @@ PeriodRange rangeFor(Period p, int offset) {
       ];
       final last = DateTime(end.year, end.month, end.day - 1);
       final label = offset == 0
-          ? 'This week'
+          ? 'This Week'
           : offset == -1
-              ? 'Last week'
+              ? 'Last Week'
               : '${start.day} ${monthNames[start.month - 1].substring(0, 3)} – '
                   '${last.day} ${monthNames[last.month - 1].substring(0, 3)}';
       return PeriodRange(start, end, buckets, label);
@@ -741,10 +695,18 @@ PeriodRange rangeFor(Period p, int offset) {
 // Helpers
 // ---------------------------------------------------------------------------
 
+/// €1.234,50 — uses a real minus sign (−) for negatives.
 String euro(double n) {
-  final neg = n < 0;
-  return '${neg ? '-' : ''}€${n.abs().toStringAsFixed(2).replaceAll('.', ',')}';
+  final neg = n < -0.004;
+  final fixed = n.abs().toStringAsFixed(2);
+  final whole = fixed.substring(0, fixed.length - 3);
+  final cents = fixed.substring(fixed.length - 2);
+  final grouped = whole.replaceAllMapped(RegExp(r'\B(?=(\d{3})+(?!\d))'), (_) => '.');
+  return '${neg ? '−' : ''}€$grouped,$cents';
 }
+
+/// +€12,00 or −€4,50 (no sign for zero).
+String signedEuro(double n) => n > 0.004 ? '+${euro(n)}' : euro(n);
 
 /// Accepts "4,50" and "4.50". Returns null for empty, invalid or zero.
 double? parseAmount(String text) {
@@ -759,6 +721,7 @@ DateTime dayStart(DateTime d) => DateTime(d.year, d.month, d.day);
 DateTime startOfWeek(DateTime d) => DateTime(d.year, d.month, d.day - (d.weekday - 1));
 
 const weekdayShort = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+const weekdayLong = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const monthNames = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
@@ -766,6 +729,24 @@ const monthNames = [
 
 String two(int n) => n.toString().padLeft(2, '0');
 
-/// e.g. "Thu 12 · 09:05"
-String shortDateTime(DateTime d) =>
-    '${weekdayShort[d.weekday - 1]} ${d.day} · ${two(d.hour)}:${two(d.minute)}';
+String hhmm(DateTime d) => '${two(d.hour)}:${two(d.minute)}';
+
+/// "Today", "Yesterday", "Monday", or "Thursday, 6 November" — like iOS lists.
+String dayHeading(DateTime d) {
+  final today = dayStart(DateTime.now());
+  final day = dayStart(d);
+  final diff = today.difference(day).inDays;
+  if (diff == 0) return 'Today';
+  if (diff == 1) return 'Yesterday';
+  if (diff > 1 && diff < 7) return weekdayLong[d.weekday - 1];
+  final y = d.year == today.year ? '' : ' ${d.year}';
+  return '${weekdayLong[d.weekday - 1]}, ${d.day} ${monthNames[d.month - 1]}$y';
+}
+
+String shortDate(DateTime d) => '${d.day} ${monthNames[d.month - 1].substring(0, 3)} ${d.year}';
+
+String freqName(Period p) => switch (p) {
+      Period.week => 'Weekly',
+      Period.month => 'Monthly',
+      Period.year => 'Yearly',
+    };

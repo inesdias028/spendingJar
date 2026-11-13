@@ -1,19 +1,23 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
-import 'package:flutter/cupertino.dart';
-import 'package:flutter/material.dart';
-import 'package:google_fonts/google_fonts.dart';
+import 'package:cupertino_ui/cupertino_ui.dart';
 
+import 'account_page.dart';
 import 'auth_page.dart';
+import 'balance_page.dart';
 import 'firebase_options.dart';
-import 'jar_page.dart';
 import 'models.dart';
 import 'stats_page.dart';
+
+/// Build with `--dart-define=DEMO=true` to open straight into sample data, without Firebase.
+const demoMode = bool.fromEnvironment('DEMO');
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   String? startupError;
-  if (!DefaultFirebaseOptions.isConfigured) {
+  if (demoMode) {
+    // Nothing to set up.
+  } else if (!DefaultFirebaseOptions.isConfigured) {
     startupError = 'Firebase is not set up yet. Fill in lib/firebase_options.dart with your project\'s settings.';
   } else {
     try {
@@ -25,19 +29,30 @@ Future<void> main() async {
   runApp(SpendingJarApp(startupError: startupError));
 }
 
-/// iOS system colours.
+/// iOS system colours. They switch automatically between light and dark mode;
+/// use `.of(context)` where a plain colour is needed (for example in a BoxDecoration).
 class AppColors {
-  static const background = Color(0xFFF2F2F7); // systemGroupedBackground
-  static const card = Colors.white;
-  static const green = Color(0xFF34C759);
-  static const darkGreen = Color(0xFF248A3D);
-  static const orange = Color(0xFFFF9500);
-  static const red = Color(0xFFFF3B30);
-  static const blue = Color(0xFF007AFF);
-  static const track = Color(0xFFE5E5EA);
-  static const text = Color(0xFF000000);
-  static const muted = Color(0xFF8A8A8E);
-  static const separator = Color(0xFFD1D1D6);
+  static const background = CupertinoColors.systemGroupedBackground;
+  static const card = CupertinoColors.secondarySystemGroupedBackground;
+  static const green = CupertinoColors.systemGreen;
+  static const red = CupertinoColors.systemRed;
+  static const orange = CupertinoColors.systemOrange;
+  static const blue = CupertinoColors.systemBlue;
+  static const label = CupertinoColors.label;
+  static const muted = CupertinoColors.secondaryLabel;
+  static const faint = CupertinoColors.tertiaryLabel;
+  static const separator = CupertinoColors.separator;
+  static const fill = CupertinoColors.tertiarySystemFill;
+  static const track = CupertinoColors.systemFill;
+
+  /// Text colour for money: green when positive, red when negative.
+  static Color money(BuildContext context, double v) =>
+      (v > 0.004 ? green : (v < -0.004 ? red : label)).of(context);
+}
+
+extension ResolveColor on Color {
+  /// The light or dark version of an iOS dynamic colour.
+  Color of(BuildContext context) => CupertinoDynamicColor.resolve(this, context);
 }
 
 class SpendingJarApp extends StatelessWidget {
@@ -46,30 +61,18 @@ class SpendingJarApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final base = ThemeData(
-      useMaterial3: true,
-      platform: TargetPlatform.iOS,
-      colorScheme: ColorScheme.fromSeed(seedColor: AppColors.blue, surface: AppColors.background),
-      scaffoldBackgroundColor: AppColors.background,
-      splashFactory: NoSplash.splashFactory,
-      highlightColor: Colors.transparent,
-      fontFamily: GoogleFonts.inter().fontFamily,
-    );
-    return MaterialApp(
+    return CupertinoApp(
       title: 'Spending Jar',
       debugShowCheckedModeBanner: false,
-      theme: base.copyWith(
-        cupertinoOverrideTheme: CupertinoThemeData(
-          primaryColor: AppColors.blue,
-          scaffoldBackgroundColor: AppColors.background,
-          textTheme: CupertinoTextThemeData(
-            primaryColor: AppColors.blue,
-            textStyle: GoogleFonts.inter(fontSize: 17, color: AppColors.text, letterSpacing: -0.4),
-            tabLabelTextStyle: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: AppColors.muted),
-          ),
-        ),
+      // No brightness set: it follows the phone's light / dark mode.
+      theme: const CupertinoThemeData(
+        primaryColor: CupertinoColors.systemBlue,
+        scaffoldBackgroundColor: AppColors.background,
+        barBackgroundColor: CupertinoColors.systemGroupedBackground,
       ),
-      home: startupError != null ? _Message(text: startupError!) : const AuthGate(),
+      home: startupError != null
+          ? MessagePage(text: startupError!)
+          : (demoMode ? HomeShell(store: Store.demo()) : const AuthGate()),
     );
   }
 }
@@ -83,15 +86,21 @@ class AuthGate extends StatelessWidget {
     return StreamBuilder<User?>(
       stream: FirebaseAuth.instance.authStateChanges(),
       builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
-          return const Scaffold(body: Center(child: CupertinoActivityIndicator(radius: 14)));
-        }
+        if (snap.connectionState == ConnectionState.waiting) return const _Loading();
         final user = snap.data;
         if (user == null) return const AuthPage();
         return _SignedIn(key: ValueKey(user.uid), uid: user.uid);
       },
     );
   }
+}
+
+class _Loading extends StatelessWidget {
+  const _Loading();
+
+  @override
+  Widget build(BuildContext context) =>
+      const CupertinoPageScaffold(child: Center(child: CupertinoActivityIndicator(radius: 14)));
 }
 
 class _SignedIn extends StatefulWidget {
@@ -111,7 +120,7 @@ class _SignedInState extends State<_SignedIn> with WidgetsBindingObserver {
     WidgetsBinding.instance.addObserver(this);
   }
 
-  // Coming back to the app: add any recurring spending that is now due.
+  // Coming back to the app: add any recurring money that is now due.
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.resumed && store.ready) store.runRecurring();
@@ -130,63 +139,58 @@ class _SignedInState extends State<_SignedIn> with WidgetsBindingObserver {
       listenable: store,
       builder: (context, _) {
         if (store.error != null) {
-          return _Message(
+          return MessagePage(
             text: "Couldn't load your data: ${store.error}",
             action: CupertinoButton(
               onPressed: () => FirebaseAuth.instance.signOut(),
-              child: const Text('Sign out'),
+              child: const Text('Sign Out'),
             ),
           );
         }
-        if (!store.ready) {
-          return const Scaffold(body: Center(child: CupertinoActivityIndicator(radius: 14)));
-        }
+        if (!store.ready) return const _Loading();
         return HomeShell(store: store);
       },
     );
   }
 }
 
-class HomeShell extends StatefulWidget {
+/// The three tabs, with the translucent iOS tab bar.
+class HomeShell extends StatelessWidget {
   const HomeShell({super.key, required this.store});
   final Store store;
 
   @override
-  State<HomeShell> createState() => _HomeShellState();
-}
-
-class _HomeShellState extends State<HomeShell> {
-  int _tab = 0;
-
-  @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: IndexedStack(
-        index: _tab,
-        children: [
-          JarPage(store: widget.store),
-          StatsPage(store: widget.store),
-          const AccountPage(),
+    return CupertinoTabScaffold(
+      tabBar: CupertinoTabBar(
+        backgroundColor: const CupertinoDynamicColor.withBrightness(
+          color: Color(0xCCF9F9F9),
+          darkColor: Color(0xCC1D1D1D),
+        ),
+        items: const [
+          BottomNavigationBarItem(
+            icon: Icon(CupertinoIcons.creditcard),
+            activeIcon: Icon(CupertinoIcons.creditcard_fill),
+            label: 'Balance',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(CupertinoIcons.chart_bar),
+            activeIcon: Icon(CupertinoIcons.chart_bar_fill),
+            label: 'Stats',
+          ),
+          BottomNavigationBarItem(
+            icon: Icon(CupertinoIcons.person_crop_circle),
+            activeIcon: Icon(CupertinoIcons.person_crop_circle_fill),
+            label: 'Account',
+          ),
         ],
       ),
-      // Extra space under the bar lifts the buttons away from the bottom edge.
-      bottomNavigationBar: Container(
-        color: const Color(0xFFF9F9F9),
-        padding: const EdgeInsets.only(bottom: 14),
-        child: CupertinoTabBar(
-          currentIndex: _tab,
-          onTap: (i) => setState(() => _tab = i),
-          height: 68,
-          iconSize: 34,
-          activeColor: AppColors.blue,
-          inactiveColor: AppColors.muted,
-          backgroundColor: const Color(0xFFF9F9F9),
-          items: const [
-            BottomNavigationBarItem(icon: Icon(CupertinoIcons.home), label: 'Jar'),
-            BottomNavigationBarItem(icon: Icon(CupertinoIcons.chart_bar), label: 'Stats'),
-            BottomNavigationBarItem(icon: Icon(CupertinoIcons.person_crop_circle), label: 'Account'),
-          ],
-        ),
+      tabBuilder: (context, i) => CupertinoTabView(
+        builder: (_) => switch (i) {
+          0 => BalancePage(store: store),
+          1 => StatsPage(store: store),
+          _ => AccountPage(store: store),
+        },
       ),
     );
   }
@@ -196,21 +200,77 @@ class _HomeShellState extends State<HomeShell> {
 // Shared iOS-style pieces
 // ---------------------------------------------------------------------------
 
-/// Big bold page title, like iOS "large titles".
-class LargeTitle extends StatelessWidget {
-  const LargeTitle(this.text, {super.key, this.trailing});
+/// A tab's page: grouped background with a big title that shrinks into the
+/// navigation bar as you scroll, like Settings, Wallet or Health.
+class LargeTitlePage extends StatelessWidget {
+  const LargeTitlePage({super.key, required this.title, required this.children, this.trailing});
+  final String title;
+  final List<Widget> children;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    return CupertinoPageScaffold(
+      backgroundColor: AppColors.background,
+      child: CustomScrollView(
+        slivers: [
+          CupertinoSliverNavigationBar(
+            largeTitle: Text(title),
+            trailing: trailing,
+            stretch: true,
+            border: null,
+            backgroundColor: const CupertinoDynamicColor.withBrightness(
+              color: Color(0xE6F2F2F7),
+              darkColor: Color(0xE6000000),
+            ),
+          ),
+          SliverSafeArea(
+            top: false,
+            sliver: SliverPadding(
+              padding: const EdgeInsets.only(bottom: 24),
+              sliver: SliverList(delegate: SliverChildListDelegate(children)),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// White (or dark grey) rounded box, the same as an inset grouped list.
+class InsetCard extends StatelessWidget {
+  const InsetCard({super.key, required this.child, this.padding = EdgeInsets.zero, this.margin});
+  final Widget child;
+  final EdgeInsetsGeometry padding;
+  final EdgeInsetsGeometry? margin;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      margin: margin ?? const EdgeInsets.symmetric(horizontal: 20),
+      padding: padding,
+      clipBehavior: Clip.antiAlias,
+      decoration: BoxDecoration(color: AppColors.card.of(context), borderRadius: BorderRadius.circular(12)),
+      child: child,
+    );
+  }
+}
+
+/// Small grey heading above a group, like in iOS Settings.
+class GroupHeader extends StatelessWidget {
+  const GroupHeader(this.text, {super.key, this.trailing});
   final String text;
   final Widget? trailing;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(4, 8, 4, 14),
+      padding: const EdgeInsets.fromLTRB(36, 22, 36, 7),
       child: Row(
         children: [
           Expanded(
-            child: Text(text,
-                style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w700, letterSpacing: -0.8)),
+            child: Text(text.toUpperCase(),
+                style: TextStyle(fontSize: 13, color: AppColors.muted.of(context), letterSpacing: -0.08)),
           ),
           if (trailing != null) trailing!,
         ],
@@ -219,117 +279,156 @@ class LargeTitle extends StatelessWidget {
   }
 }
 
-/// Small grey heading above a group, like in iOS Settings.
-class GroupHeader extends StatelessWidget {
-  const GroupHeader(this.text, {super.key});
+/// Header for a CupertinoListSection: small grey capitals, like iOS Settings.
+class SectionHeader extends StatelessWidget {
+  const SectionHeader(this.text, {super.key, this.trailing});
   final String text;
+  final Widget? trailing;
+
+  @override
+  Widget build(BuildContext context) {
+    final style = TextStyle(
+      fontSize: 13,
+      fontWeight: FontWeight.w400,
+      letterSpacing: -0.08,
+      color: AppColors.muted.of(context),
+    );
+    return DefaultTextStyle(
+      style: style,
+      child: Padding(
+        padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
+        child: Row(
+          children: [
+            Expanded(child: Text(text.toUpperCase())),
+            if (trailing != null) trailing!,
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Small grey note under a group.
+class GroupFooter extends StatelessWidget {
+  const GroupFooter(this.text, {super.key, this.color});
+  final String text;
+  final Color? color;
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 22, 16, 7),
-      child: Text(text.toUpperCase(),
-          style: const TextStyle(fontSize: 13, color: AppColors.muted, letterSpacing: 0.1)),
+      padding: const EdgeInsets.fromLTRB(36, 7, 36, 0),
+      child: Text(text, style: TextStyle(fontSize: 13, color: (color ?? AppColors.muted).of(context))),
     );
   }
 }
 
-/// White rounded box that holds a group of rows.
-class InsetCard extends StatelessWidget {
-  const InsetCard({super.key, required this.child, this.padding = EdgeInsets.zero});
-  final Widget child;
-  final EdgeInsetsGeometry padding;
+/// Emoji in a soft circle, used at the start of list rows.
+class EmojiBadge extends StatelessWidget {
+  const EmojiBadge(this.emoji, {super.key, this.size = 32});
+  final String emoji;
+  final double size;
 
   @override
   Widget build(BuildContext context) {
     return Container(
-      padding: padding,
-      clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(color: AppColors.card, borderRadius: BorderRadius.circular(12)),
-      child: child,
+      width: size,
+      height: size,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(color: AppColors.fill.of(context), borderRadius: BorderRadius.circular(size * 0.28)),
+      child: Text(emoji, style: TextStyle(fontSize: size * 0.55)),
     );
   }
 }
 
-/// Thin line between rows, indented like iOS lists.
-class RowDivider extends StatelessWidget {
-  const RowDivider({super.key, this.indent = 16});
-  final double indent;
+/// Full-width segmented control (Week / Month / Year, Spend / Income…).
+class Segments<T extends Object> extends StatelessWidget {
+  const Segments({super.key, required this.value, required this.items, required this.onChanged, this.thumbColor});
+  final T value;
+  final Map<T, String> items;
+  final ValueChanged<T> onChanged;
+  final Color? thumbColor;
 
   @override
   Widget build(BuildContext context) {
-    return Container(
-      margin: EdgeInsets.only(left: indent),
-      height: 0.5,
-      color: AppColors.separator,
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: SizedBox(
+        width: double.infinity,
+        child: CupertinoSlidingSegmentedControl<T>(
+          groupValue: value,
+          thumbColor: thumbColor ??
+              const CupertinoDynamicColor.withBrightness(color: Color(0xFFFFFFFF), darkColor: Color(0xFF636366)),
+          children: {
+            for (final e in items.entries)
+              e.key: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 6),
+                child: Text(e.value, style: const TextStyle(fontSize: 13, fontWeight: FontWeight.w500)),
+              ),
+          },
+          onValueChanged: (v) {
+            if (v != null) onChanged(v);
+          },
+        ),
+      ),
     );
   }
 }
 
-/// An iOS-style sheet that slides up from the bottom, with Cancel and a Done button.
-class IosSheet extends StatelessWidget {
-  const IosSheet({
+/// Opens an iOS 13+ style sheet: the screen behind shrinks back, and it can
+/// be dragged down to close.
+Future<T?> presentSheet<T>(BuildContext context, Widget Function(BuildContext, ScrollController) builder) {
+  return showCupertinoSheet<T>(context: context, scrollableBuilder: builder);
+}
+
+/// The inside of a sheet: Cancel, a bold title and a Done button on top.
+class SheetScaffold extends StatelessWidget {
+  const SheetScaffold({
     super.key,
     required this.title,
-    required this.child,
-    required this.onDone,
+    required this.controller,
+    required this.children,
+    this.onDone,
     this.doneLabel = 'Done',
+    this.showCancel = true,
   });
 
   final String title;
-  final Widget child;
-  final VoidCallback onDone;
+  final ScrollController controller;
+  final List<Widget> children;
+  final VoidCallback? onDone;
   final String doneLabel;
+  final bool showCancel;
 
   @override
   Widget build(BuildContext context) {
-    return Material(
-      type: MaterialType.transparency,
-      child: Padding(
-        padding: EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
-        child: Container(
-          constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.9),
-          decoration: const BoxDecoration(
-            color: AppColors.background,
-            borderRadius: BorderRadius.vertical(top: Radius.circular(14)),
-          ),
-          child: SafeArea(
-            top: false,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const SizedBox(height: 6),
-                Container(
-                  width: 36,
-                  height: 5,
-                  decoration: BoxDecoration(color: AppColors.separator, borderRadius: BorderRadius.circular(3)),
-                ),
-                Row(
-                  children: [
-                    CupertinoButton(
-                      onPressed: () => Navigator.pop(context),
-                      child: const Text('Cancel'),
-                    ),
-                    Expanded(
-                      child: Text(title,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
-                    ),
-                    CupertinoButton(
-                      onPressed: onDone,
-                      child: Text(doneLabel, style: const TextStyle(fontWeight: FontWeight.w600)),
-                    ),
-                  ],
-                ),
-                Flexible(
-                  child: SingleChildScrollView(
-                    padding: const EdgeInsets.fromLTRB(16, 4, 16, 20),
-                    child: child,
-                  ),
-                ),
-              ],
-            ),
-          ),
+    return CupertinoPageScaffold(
+      backgroundColor: AppColors.background,
+      navigationBar: CupertinoNavigationBar(
+        automaticallyImplyLeading: false,
+        transitionBetweenRoutes: false,
+        backgroundColor: AppColors.background,
+        border: null,
+        leading: showCancel
+            ? CupertinoButton(
+                padding: EdgeInsets.zero,
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Cancel'),
+              )
+            : null,
+        middle: Text(title),
+        trailing: CupertinoButton(
+          padding: EdgeInsets.zero,
+          onPressed: onDone ?? () => Navigator.pop(context),
+          child: Text(doneLabel, style: const TextStyle(fontWeight: FontWeight.w600)),
+        ),
+      ),
+      child: SafeArea(
+        bottom: false,
+        child: ListView(
+          controller: controller,
+          padding: const EdgeInsets.only(top: 8, bottom: 40),
+          children: children,
         ),
       ),
     );
@@ -358,22 +457,102 @@ Future<bool> confirmIos(BuildContext context, String title,
   return res ?? false;
 }
 
-class _Message extends StatelessWidget {
-  const _Message({required this.text, this.action});
+/// A short message in a dark pill near the top, which fades away (like iOS HUDs).
+void showToast(BuildContext context, String message) {
+  final overlay = Overlay.of(context, rootOverlay: true);
+  late final OverlayEntry entry;
+  entry = OverlayEntry(builder: (_) => _Toast(message: message, onDone: () => entry.remove()));
+  overlay.insert(entry);
+}
+
+class _Toast extends StatefulWidget {
+  const _Toast({required this.message, required this.onDone});
+  final String message;
+  final VoidCallback onDone;
+
+  @override
+  State<_Toast> createState() => _ToastState();
+}
+
+class _ToastState extends State<_Toast> with SingleTickerProviderStateMixin {
+  late final _c = AnimationController(vsync: this, duration: const Duration(milliseconds: 220));
+
+  @override
+  void initState() {
+    super.initState();
+    _run();
+  }
+
+  Future<void> _run() async {
+    await _c.forward();
+    await Future<void>.delayed(const Duration(milliseconds: 1800));
+    if (!mounted) return;
+    await _c.reverse();
+    widget.onDone();
+  }
+
+  @override
+  void dispose() {
+    _c.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final top = MediaQuery.of(context).padding.top + 10;
+    return Positioned(
+      top: top,
+      left: 24,
+      right: 24,
+      child: IgnorePointer(
+        child: FadeTransition(
+          opacity: _c,
+          child: SlideTransition(
+            position: Tween(begin: const Offset(0, -0.4), end: Offset.zero)
+                .animate(CurvedAnimation(parent: _c, curve: Curves.easeOut)),
+            child: Center(
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xEE1C1C1E),
+                  borderRadius: BorderRadius.circular(22),
+                  boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 18, offset: Offset(0, 6))],
+                ),
+                child: Text(
+                  widget.message,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    color: CupertinoColors.white,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    decoration: TextDecoration.none,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class MessagePage extends StatelessWidget {
+  const MessagePage({super.key, required this.text, this.action});
   final String text;
   final Widget? action;
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
+    return CupertinoPageScaffold(
+      child: SafeArea(
         child: Center(
           child: Padding(
             padding: const EdgeInsets.all(24),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(CupertinoIcons.exclamationmark_triangle, size: 44, color: AppColors.muted),
+                Icon(CupertinoIcons.exclamationmark_triangle, size: 44, color: AppColors.muted.of(context)),
                 const SizedBox(height: 12),
                 Text(text, textAlign: TextAlign.center, style: const TextStyle(fontSize: 15)),
                 if (action != null) ...[const SizedBox(height: 8), action!],

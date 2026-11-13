@@ -14,7 +14,7 @@ dependencies:
   firebase_auth: any
   cloud_firestore: any
   cupertino_icons: any
-  google_fonts: any
+  cupertino_ui: ^1.1.6
 
 dev_dependencies:
   flutter_test:
@@ -31,5 +31,5 @@ flutter_launcher_icons:
   web:
     generate: true
     image_path: "assets/icon.png"
-    background_color: "#FAF7F2"
-    theme_color: "#FAF7F2"
+    background_color: "#F2F2F7"
+    theme_color: "#F2F2F7"
