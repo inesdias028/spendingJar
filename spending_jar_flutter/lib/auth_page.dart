@@ -302,9 +302,9 @@ class _Notice extends StatelessWidget {
   }
 }
 
-/// The app's icon, drawn: a green rounded square with a euro sign.
+/// The app's icon (assets/logo.png), with iOS-style rounded corners.
 class AppBadge extends StatelessWidget {
-  const AppBadge({super.key, this.size = 96});
+  const AppBadge({super.key, this.size = 104});
   final double size;
 
   @override
@@ -314,14 +314,12 @@ class AppBadge extends StatelessWidget {
       height: size,
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(size * 0.225),
-        gradient: const LinearGradient(
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-          colors: [Color(0xFF4CD964), Color(0xFF248A3D)],
-        ),
-        boxShadow: const [BoxShadow(color: Color(0x33000000), blurRadius: 16, offset: Offset(0, 6))],
+        boxShadow: const [BoxShadow(color: Color(0x40000000), blurRadius: 18, offset: Offset(0, 8))],
       ),
-      child: Icon(CupertinoIcons.money_euro, color: CupertinoColors.white, size: size * 0.55),
+      child: ClipRRect(
+        borderRadius: BorderRadius.circular(size * 0.225),
+        child: Image.asset('assets/logo.png', width: size, height: size, fit: BoxFit.cover),
+      ),
     );
   }
 }
