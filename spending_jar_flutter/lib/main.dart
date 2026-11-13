@@ -66,6 +66,14 @@ class SpendingJarApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       // No brightness set: it follows the phone's light / dark mode.
       theme: const CupertinoThemeData(
+        textTheme: CupertinoTextThemeData(
+          tabLabelTextStyle: TextStyle(
+            fontSize: 12,
+            fontWeight: FontWeight.w500,
+            letterSpacing: -0.1,
+            color: CupertinoColors.inactiveGray,
+          ),
+        ),
         primaryColor: CupertinoColors.systemBlue,
         scaffoldBackgroundColor: AppColors.background,
         barBackgroundColor: CupertinoColors.systemGroupedBackground,
@@ -162,7 +170,9 @@ class HomeShell extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return CupertinoTabScaffold(
-      tabBar: CupertinoTabBar(
+      tabBar: LiftedTabBar(
+        height: 62,
+        iconSize: 30,
         backgroundColor: const CupertinoDynamicColor.withBrightness(
           color: Color(0xCCF9F9F9),
           darkColor: Color(0xCC1D1D1D),
@@ -192,6 +202,68 @@ class HomeShell extends StatelessWidget {
           _ => AccountPage(store: store),
         },
       ),
+    );
+  }
+}
+
+/// The iOS tab bar, a bit taller, with its buttons kept clear of the bottom edge.
+///
+/// On an iPhone home-screen web app the browser often reports no safe area, so
+/// the normal tab bar puts its buttons right on top of the home indicator.
+/// This one always leaves at least [minBottom] of space under them.
+class LiftedTabBar extends CupertinoTabBar {
+  const LiftedTabBar({
+    super.key,
+    required super.items,
+    super.onTap,
+    super.currentIndex,
+    super.backgroundColor,
+    super.activeColor,
+    super.iconSize,
+    super.height,
+    this.minBottom = 22,
+  });
+
+  final double minBottom;
+
+  // Includes the lift, so pages leave room for the whole bar.
+  @override
+  Size get preferredSize => Size.fromHeight(height + minBottom);
+
+  @override
+  Widget build(BuildContext context) {
+    final mq = MediaQuery.of(context);
+    final bottom = mq.viewPadding.bottom < minBottom ? minBottom : mq.viewPadding.bottom;
+    return MediaQuery(
+      data: mq.copyWith(viewPadding: mq.viewPadding.copyWith(bottom: bottom)),
+      child: Builder(builder: super.build),
+    );
+  }
+
+  // CupertinoTabScaffold copies the bar to set the selected tab; keep it a LiftedTabBar.
+  @override
+  LiftedTabBar copyWith({
+    Key? key,
+    List<BottomNavigationBarItem>? items,
+    Color? backgroundColor,
+    Color? activeColor,
+    Color? inactiveColor,
+    double? iconSize,
+    double? height,
+    Border? border,
+    int? currentIndex,
+    ValueChanged<int>? onTap,
+  }) {
+    return LiftedTabBar(
+      key: key ?? this.key,
+      items: items ?? this.items,
+      backgroundColor: backgroundColor ?? this.backgroundColor,
+      activeColor: activeColor ?? this.activeColor,
+      iconSize: iconSize ?? this.iconSize,
+      height: height ?? this.height,
+      currentIndex: currentIndex ?? this.currentIndex,
+      onTap: onTap ?? this.onTap,
+      minBottom: minBottom,
     );
   }
 }
