@@ -44,6 +44,9 @@ class Entry {
   final String? label;
   final DateTime date;
 
+  /// Optional reason, like "Dinner with Ana". Empty or null when there is none.
+  final String? note;
+
   const Entry({
     required this.id,
     required this.amount,
@@ -52,7 +55,10 @@ class Entry {
     this.emoji,
     this.label,
     required this.date,
+    this.note,
   });
+
+  bool get hasNote => note != null && note!.trim().isNotEmpty;
 
   /// + for income, − for spending.
   double get signed => income ? amount : -amount;
@@ -68,6 +74,7 @@ class Entry {
         emoji: j['emoji'] as String?,
         label: j['label'] as String?,
         date: DateTime.parse(j['date'] as String).toLocal(),
+        note: j['note'] as String?,
       );
 
   Map<String, dynamic> toJson() => {
@@ -78,6 +85,7 @@ class Entry {
         'emoji': emoji,
         'label': label,
         'date': date.toUtc().toIso8601String(),
+        if (hasNote) 'note': note!.trim(),
       };
 }
 
@@ -200,7 +208,7 @@ const suggestedIncomeEmojis = ['💼', '💶', '🏦', '📈', '🧾', '🎓', '
 //
 // Firestore layout (each user can only see their own, see firestore.rules):
 //   users/{uid}                 -> { startBalance, categories, recurring, updatedAt }
-//   users/{uid}/expenses/{id}   -> { amount, income?, category, emoji, label, date }
+//   users/{uid}/expenses/{id}   -> { amount, income?, category, emoji, label, date, note? }
 //
 // Balance = startBalance + everything in − everything out.
 // ---------------------------------------------------------------------------
@@ -218,16 +226,16 @@ class Store extends ChangeNotifier {
     final now = DateTime.now();
     DateTime ago(int days, int h, [int m = 0]) => DateTime(now.year, now.month, now.day - days, h, m);
     var n = 0;
-    Entry e(double amount, Category c, DateTime d) =>
-        Entry(id: 'demo${n++}', amount: amount, income: c.income, category: c.key, emoji: c.emoji, label: c.label, date: d);
+    Entry e(double amount, Category c, DateTime d, [String? note]) => Entry(
+        id: 'demo${n++}', amount: amount, income: c.income, category: c.key, emoji: c.emoji, label: c.label, date: d, note: note);
     final cat = {for (final c in categories) c.key: c};
     startBalance = 350;
     entries = [
       e(4.5, cat['coffee']!, ago(0, 8, 40)),
-      e(12.9, cat['food']!, ago(0, 13, 5)),
+      e(12.9, cat['food']!, ago(0, 13, 5), 'Lunch with Ana'),
       e(25, cat['refund']!, ago(1, 18, 20)),
       e(2.1, cat['transport']!, ago(1, 9)),
-      e(39.99, cat['shopping']!, ago(2, 17, 30)),
+      e(39.99, cat['shopping']!, ago(2, 17, 30), 'New jeans'),
       e(18, cat['fun']!, ago(3, 21)),
       e(1450, cat['salary']!, ago(now.day - 1, 9)),
       e(64.3, cat['food']!, ago(6, 11)),
@@ -464,7 +472,7 @@ class Store extends ChangeNotifier {
 
   // ---- actions (the screen updates straight away; Firebase syncs behind) ----
 
-  void addEntry(double amount, Category c) {
+  void addEntry(double amount, Category c, {String note = ''}) {
     final e = Entry(
       id: DateTime.now().microsecondsSinceEpoch.toString(),
       amount: amount,
@@ -473,6 +481,7 @@ class Store extends ChangeNotifier {
       emoji: c.emoji,
       label: c.label,
       date: DateTime.now(),
+      note: note.trim().isEmpty ? null : note.trim(),
     );
     entries = [e, ...entries];
     notifyListeners();

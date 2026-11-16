@@ -16,6 +16,7 @@ class BalancePage extends StatefulWidget {
 class _BalancePageState extends State<BalancePage> {
   final _amount = TextEditingController();
   final _amountFocus = FocusNode();
+  final _note = TextEditingController(); // optional reason for the amount
   bool _income = false;
   Period? _repeat; // null = one-off
 
@@ -29,6 +30,7 @@ class _BalancePageState extends State<BalancePage> {
   void dispose() {
     _amount.dispose();
     _amountFocus.dispose();
+    _note.dispose();
     super.dispose();
   }
 
@@ -42,14 +44,18 @@ class _BalancePageState extends State<BalancePage> {
     }
     HapticFeedback.lightImpact();
     final repeat = _repeat;
+    final note = _note.text.trim();
     if (repeat == null) {
-      store.addEntry(amount, c);
-      showToast(context, '${c.emoji} ${c.label}  ${signedEuro(c.income ? amount : -amount)}');
+      store.addEntry(amount, c, note: note);
+      showToast(context, '${c.emoji} ${note.isEmpty ? c.label : note}  ${signedEuro(c.income ? amount : -amount)}');
     } else {
-      store.addRecurring(name: '', amount: amount, category: c, freq: repeat, start: DateTime.now());
-      showToast(context, '${c.label} repeats ${freqName(repeat).toLowerCase()} from today');
+      // For something that repeats, the note becomes its name (e.g. "Netflix").
+      store.addRecurring(name: note, amount: amount, category: c, freq: repeat, start: DateTime.now());
+      showToast(context, '${note.isEmpty ? c.label : note} repeats ${freqName(repeat).toLowerCase()} from today');
     }
     _amount.clear();
+    _note.clear();
+    FocusScope.of(context).unfocus();
     _amountFocus.unfocus();
     setState(() => _repeat = null);
   }
@@ -159,6 +165,25 @@ class _BalancePageState extends State<BalancePage> {
                         color: (_income ? AppColors.green : AppColors.label).of(context),
                       ),
                       padding: const EdgeInsets.symmetric(vertical: 16),
+                      decoration: null,
+                      textInputAction: TextInputAction.next,
+                    ),
+                    Container(
+                        margin: const EdgeInsets.only(left: 16), height: 0.5, color: AppColors.separator.of(context)),
+                    // Optional reason for the amount ("Dinner with Ana").
+                    CupertinoTextField(
+                      controller: _note,
+                      placeholder: _income ? 'Note (optional), like Birthday money' : 'Note (optional), like Dinner with Ana',
+                      maxLength: 60,
+                      textCapitalization: TextCapitalization.sentences,
+                      textInputAction: TextInputAction.done,
+                      onSubmitted: (_) => FocusScope.of(context).unfocus(),
+                      prefix: Padding(
+                        padding: const EdgeInsets.only(left: 16),
+                        child: Icon(CupertinoIcons.pencil, size: 18, color: AppColors.muted.of(context)),
+                      ),
+                      clearButtonMode: OverlayVisibilityMode.editing,
+                      padding: const EdgeInsets.fromLTRB(10, 13, 16, 13),
                       decoration: null,
                     ),
                     Container(
@@ -444,7 +469,7 @@ class EntryRow extends StatelessWidget {
         child: const Icon(CupertinoIcons.trash_fill, color: CupertinoColors.white),
       ),
       confirmDismiss: (_) => confirmIos(context, 'Delete ${signedEuro(entry.signed)}?',
-          message: '$title · ${dayHeading(entry.date)}'),
+          message: '$title${entry.hasNote ? ' · ${entry.note!.trim()}' : ''} · ${dayHeading(entry.date)}'),
       onDismissed: (_) {
         HapticFeedback.mediumImpact();
         onDelete();
@@ -462,7 +487,16 @@ class EntryRow extends StatelessWidget {
             ],
           ],
         ),
-        subtitle: Text(entry.income ? '${hhmm(entry.date)} · Income' : hhmm(entry.date)),
+        // The note (if any) first, then the time.
+        subtitle: Text(
+          [
+            if (entry.hasNote) entry.note!.trim(),
+            hhmm(entry.date),
+            if (entry.income) 'Income',
+          ].join(' · '),
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+        ),
         trailing: Text(
           signedEuro(entry.signed),
           style: TextStyle(
