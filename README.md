@@ -12,6 +12,8 @@ The icon shows two overlapping circles, money in (teal) and money out (indigo), 
 
 The app is built with Flutter, using the iOS (Cupertino) widgets: large titles that shrink as you scroll, a translucent tab bar, inset grouped lists, iOS sheets and alerts, and automatic light/dark mode.
 
+**Full guide:** [Even-app-guide.pdf](Even-app-guide.pdf) explains how the app was made, how it works, and how to change, publish and install it.
+
 ## Code
 
 The app lives in [`spending_jar_flutter/`](spending_jar_flutter). Pushing to `main` builds it and publishes it to GitHub Pages (see `.github/workflows/deploy.yml`). The folder names and the web address still say spending-jar so existing links and home-screen installs keep working. Data is stored per user in Firebase (`firestore.rules`).
