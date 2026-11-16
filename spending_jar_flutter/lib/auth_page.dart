@@ -137,7 +137,7 @@ class _AuthPageState extends State<AuthPage> {
                 children: [
                   const Center(child: AppBadge()),
                   const SizedBox(height: 18),
-                  const Text('Spending Jar',
+                  const Text('Even',
                       textAlign: TextAlign.center,
                       style: TextStyle(fontSize: 34, fontWeight: FontWeight.w700, letterSpacing: -0.8)),
                   const SizedBox(height: 4),

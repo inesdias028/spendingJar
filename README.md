@@ -1,6 +1,6 @@
-# Spending Jar
+# Even
 
-A money tracker that installs on your iPhone like an app. It shows one **balance** that can be positive or negative:
+(Formerly Spending Jar.) A money tracker that installs on your iPhone like an app. It shows one **balance** that can be positive or negative:
 
 > balance = starting balance + money in − money out
 
@@ -8,11 +8,13 @@ A money tracker that installs on your iPhone like an app. It shows one **balance
 - **Stats** tab: one month at a time (‹ › to move between months): what you saved or overspent, a day-by-day chart of money in and out, the balance at the start and end of the month, totals by category, and a list of the last 12 months.
 - **Account** tab: starting balance, recurring items, and sign out.
 
+The icon shows two overlapping circles, money in (teal) and money out (indigo), with your balance in gold where they meet. It is drawn by `design/make_concepts.py` (`even ocean`, saved as `design/icon.svg`).
+
 The app is built with Flutter, using the iOS (Cupertino) widgets: large titles that shrink as you scroll, a translucent tab bar, inset grouped lists, iOS sheets and alerts, and automatic light/dark mode.
 
 ## Code
 
-The app lives in [`spending_jar_flutter/`](spending_jar_flutter). Pushing to `main` builds it and publishes it to GitHub Pages (see `.github/workflows/deploy.yml`). Data is stored per user in Firebase (`firestore.rules`).
+The app lives in [`spending_jar_flutter/`](spending_jar_flutter). Pushing to `main` builds it and publishes it to GitHub Pages (see `.github/workflows/deploy.yml`). The folder names and the web address still say spending-jar so existing links and home-screen installs keep working. Data is stored per user in Firebase (`firestore.rules`).
 
 `spending-jar/` is the older plain HTML version and is not deployed.
 

@@ -1,5 +1,5 @@
 name: spending_jar
-description: "A simple weekly spending tracker."
+description: "Even: money in, money out, and your balance."
 publish_to: 'none'
 version: 1.0.0+1
 

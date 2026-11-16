@@ -62,7 +62,7 @@ class SpendingJarApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return CupertinoApp(
-      title: 'Spending Jar',
+      title: 'Even',
       debugShowCheckedModeBanner: false,
       // No brightness set: it follows the phone's light / dark mode.
       theme: const CupertinoThemeData(

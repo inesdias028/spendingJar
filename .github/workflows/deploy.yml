@@ -1,4 +1,4 @@
-name: Build and deploy Spending Jar
+name: Build and deploy Even
 
 on:
   push:
@@ -35,9 +35,9 @@ jobs:
           flutter pub get
           dart run flutter_launcher_icons
           # App name and colours on the iPhone home screen
-          sed -i 's/<title>spending_jar<\/title>/<title>Spending Jar<\/title>/' web/index.html
-          sed -i 's/content="spending_jar"/content="Jar"/' web/index.html
-          sed -i 's/"name": "spending_jar"/"name": "Spending Jar"/; s/"short_name": "spending_jar"/"short_name": "Jar"/' web/manifest.json
+          sed -i 's/<title>spending_jar<\/title>/<title>Even<\/title>/' web/index.html
+          sed -i 's/content="spending_jar"/content="Even"/' web/index.html
+          sed -i 's/"name": "spending_jar"/"name": "Even"/; s/"short_name": "spending_jar"/"short_name": "Even"/' web/manifest.json
           flutter build web --release --base-href /spendingJar/spending-jar/
 
       - name: Put the site together

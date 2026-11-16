@@ -678,7 +678,7 @@ class _BalanceSheetState extends State<BalanceSheet> {
           ),
         ),
         GroupFooter(
-          _error ?? 'What you had (or owed) before you started using Spending Jar. Everything you add goes on top of it.',
+          _error ?? 'What you had (or owed) before you started using Even. Everything you add goes on top of it.',
           color: _error != null ? AppColors.red : null,
         ),
       ],
