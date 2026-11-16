@@ -38,6 +38,14 @@ jobs:
           sed -i 's/<title>spending_jar<\/title>/<title>Even<\/title>/' web/index.html
           sed -i 's/content="spending_jar"/content="Even"/' web/index.html
           sed -i 's/"name": "spending_jar"/"name": "Even"/; s/"short_name": "spending_jar"/"short_name": "Even"/' web/manifest.json
+          # iPhone home-screen icon: the 180 px size iOS wants, under a name that
+          # changes with the icon so Safari can't reuse an old saved copy.
+          # Bump ICON_VERSION whenever the icon changes.
+          ICON_VERSION=even1
+          cp ../spending-jar/icons/apple-touch-icon.png "web/icons/apple-touch-icon-$ICON_VERSION.png"
+          sed -i "s#href=\"icons/Icon-192.png\"#href=\"icons/apple-touch-icon-$ICON_VERSION.png\"#" web/index.html
+          sed -i "s#href=\"favicon.png\"#href=\"favicon.png?v=$ICON_VERSION\"#" web/index.html
+          grep -q "apple-touch-icon-$ICON_VERSION.png" web/index.html
           flutter build web --release --base-href /spendingJar/spending-jar/
 
       - name: Put the site together
