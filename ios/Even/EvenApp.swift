@@ -17,13 +17,35 @@ struct EvenApp: App {
     }
 }
 
+/// Launch arguments, used for testing: "-demo" opens sample data without signing
+/// in, "-tab stats" / "-tab account" picks the first tab, "-signin" forces the
+/// sign-in screen.
+enum Launch {
+    static let args = ProcessInfo.processInfo.arguments
+    static var demo: Bool { args.contains("-demo") }
+    static var forceSignIn: Bool { args.contains("-signin") }
+    static var tab: Int {
+        guard let i = args.firstIndex(of: "-tab"), i + 1 < args.count else { return 0 }
+        switch args[i + 1] {
+        case "stats": return 1
+        case "account": return 2
+        default: return 0
+        }
+    }
+}
+
 /// Sign-in screen when signed out, the app when signed in.
 struct RootView: View {
     @Environment(AuthModel.self) private var auth
+    @State private var demoStore: Store? = Launch.demo ? Store.demoStore() : nil
 
     var body: some View {
         Group {
-            if !auth.checked {
+            if let demoStore {
+                MainTabs().environment(demoStore)
+            } else if Launch.forceSignIn {
+                AuthView()
+            } else if !auth.checked {
                 ProgressView()
             } else if let user = auth.user {
                 SignedInView(uid: user.uid)
@@ -69,14 +91,19 @@ struct SignedInView: View {
 }
 
 struct MainTabs: View {
+    @State private var tab = Launch.tab
+
     var body: some View {
-        TabView {
+        TabView(selection: $tab) {
             BalanceView()
                 .tabItem { Label("Balance", systemImage: "creditcard") }
+                .tag(0)
             StatsView()
                 .tabItem { Label("Stats", systemImage: "chart.bar") }
+                .tag(1)
             AccountView()
                 .tabItem { Label("Account", systemImage: "person.crop.circle") }
+                .tag(2)
         }
     }
 }

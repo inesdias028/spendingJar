@@ -11,7 +11,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write  # only to push simulator screenshots to the ci-screenshots branch
 
 jobs:
   build:
@@ -58,3 +58,57 @@ jobs:
           name: Even-ipa
           path: ios/Even.ipa
           retention-days: 30
+
+      # Opens the app in an iPhone simulator to check it starts and doesn't crash,
+      # and saves screenshots to the ci-screenshots branch.
+      - name: Build for the simulator
+        working-directory: ios
+        run: |
+          xcodebuild -project Even.xcodeproj -scheme Even -configuration Debug \
+            -destination "generic/platform=iOS Simulator" -derivedDataPath simbuild \
+            CODE_SIGNING_ALLOWED=NO build > sim.log 2>&1 || { tail -n 40 sim.log; exit 1; }
+
+      - name: Try it in the simulator
+        working-directory: ios
+        run: |
+          set +e
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)['devices']
+          print(next(x['udid'] for k, v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone')))")
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl ui "$UDID" appearance light
+          xcrun simctl install "$UDID" simbuild/Build/Products/Debug-iphonesimulator/Even.app
+          APP=io.github.inesdias028.even
+          mkdir -p shots
+          shoot() {
+            name=$1; shift
+            xcrun simctl terminate "$UDID" $APP >/dev/null 2>&1
+            xcrun simctl launch "$UDID" $APP "$@"
+            sleep 15
+            if xcrun simctl spawn "$UDID" launchctl list | grep -q "$APP"; then
+              echo "::notice::$name: the app is running"
+            else
+              echo "::error::$name: the app is not running (it may have crashed)"
+            fi
+            xcrun simctl io "$UDID" screenshot "shots/$name.png"
+          }
+          shoot 1-signin -signin
+          shoot 2-balance -demo
+          shoot 3-stats -demo -tab stats
+          shoot 4-account -demo -tab account
+          shoot 5-normal-start
+          ls ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -i even && echo "::error::Crash report found for Even"
+          exit 0
+
+      - name: Publish screenshots
+        if: always()
+        working-directory: ios/shots
+        run: |
+          git init -q
+          git checkout -q -b ci-screenshots
+          git add .
+          git -c user.name="github-actions" -c user.email="github-actions@users.noreply.github.com" \
+            commit -qm "Simulator screenshots for ${GITHUB_SHA}"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" ci-screenshots

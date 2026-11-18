@@ -7,6 +7,8 @@ import FirebaseFirestore
 @Observable
 final class Store {
     let uid: String
+    /// Demo mode (launch argument -demo): sample data in memory, nothing sent to Firebase.
+    let demo: Bool
 
     /// What you had (or owed) before you started tracking. Can be negative.
     var startBalance: Double = 0
@@ -31,8 +33,45 @@ final class Store {
 
     init(uid: String) {
         self.uid = uid
+        self.demo = false
         start()
     }
+
+    private init(demoData: Void) {
+        uid = "demo"
+        demo = true
+        startBalance = 350
+        let now = Date()
+        func ago(_ days: Int, _ h: Int, _ m: Int = 0) -> Date {
+            let d = cal.date(byAdding: .day, value: -days, to: dayStart(now)) ?? now
+            return cal.date(bySettingHour: h, minute: m, second: 0, of: d) ?? d
+        }
+        let byKey = Dictionary(uniqueKeysWithValues: categories.map { ($0.key, $0) })
+        var n = 0
+        func e(_ amount: Double, _ key: String, _ date: Date, _ note: String? = nil) -> Entry {
+            let c = byKey[key]!
+            n += 1
+            return Entry(id: "demo\(n)", amount: amount, income: c.income, category: c.key,
+                         emoji: c.emoji, label: c.label, date: date, note: note)
+        }
+        let day = cal.component(.day, from: now)
+        entries = [
+            e(4.5, "coffee", ago(0, 8, 40)),
+            e(12.9, "food", ago(0, 13, 5), "Lunch with Ana"),
+            e(25, "refund", ago(1, 18, 20)),
+            e(2.1, "transport", ago(1, 9)),
+            e(39.99, "shopping", ago(2, 17, 30), "New jeans"),
+            e(18, "fun", ago(3, 21), "Cinema with Rita"),
+            e(1450, "salary", ago(day - 1, 9)),
+            e(64.3, "food", ago(6, 11)),
+            e(50, "gift_in", ago(12, 15)),
+            e(120, "shopping", ago(15, 16)),
+        ].sorted { $0.date > $1.date }
+        ready = true
+    }
+
+    /// A store with sample data, for demo mode.
+    static func demoStore() -> Store { Store(demoData: ()) }
 
     deinit {
         userListener?.remove()
@@ -119,6 +158,7 @@ final class Store {
     }
 
     private func saveSettings() {
+        if demo { return }
         userDoc.updateData([
             "startBalance": startBalance,
             "recurring": recurring.map(\.dict),
@@ -182,6 +222,7 @@ final class Store {
             note: trimmed.isEmpty ? nil : trimmed
         )
         entries.insert(e, at: 0)
+        if demo { return }
         entriesCol.document(e.id).setData(e.dict) { [weak self] err in
             if let err { self?.fail(err) }
         }
@@ -189,6 +230,7 @@ final class Store {
 
     func deleteEntry(_ id: String) {
         entries.removeAll { $0.id == id }
+        if demo { return }
         entriesCol.document(id).delete { [weak self] err in
             if let err { self?.fail(err) }
         }
@@ -267,7 +309,13 @@ final class Store {
                     date: cal.date(bySettingHour: 9, minute: 0, second: 0, of: d) ?? d,
                     note: nil
                 )
-                entriesCol.document(id).setData(e.dict)
+                if demo {
+                    entries.removeAll { $0.id == id }
+                    entries.append(e)
+                    entries.sort { $0.date > $1.date }
+                } else {
+                    entriesCol.document(id).setData(e.dict)
+                }
                 item.next = item.after(d)
                 changed = true
                 count += 1
