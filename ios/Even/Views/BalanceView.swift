@@ -13,6 +13,9 @@ struct BalanceView: View {
     @State private var showRecurring = Launch.showRecurring
     @State private var showNewCategory = false
     @State private var pendingDelete: Entry?
+    /// Edit mode for the category grid: each tile shows a red badge to remove it.
+    @State private var editingCategories = Launch.editCategories
+    @State private var pendingCategory: Category?
     @State private var toast: String?
     @State private var addedCount = 0
     @FocusState private var focus: Field?
@@ -74,6 +77,20 @@ struct BalanceView: View {
             } message: { entry in
                 Text(deleteMessage(entry))
             }
+            .confirmationDialog(
+                "Delete \u{201C}\(pendingCategory?.label ?? "")\u{201D}?",
+                isPresented: Binding(get: { pendingCategory != nil }, set: { if !$0 { pendingCategory = nil } }),
+                titleVisibility: .visible,
+                presenting: pendingCategory
+            ) { c in
+                Button("Delete Category", role: .destructive) {
+                    withAnimation { store.deleteCategory(c.key) }
+                    if store.categories(income: income).isEmpty { editingCategories = false }
+                }
+            } message: { _ in
+                Text("Past entries in this category stay in your list.")
+            }
+            .onChange(of: income) { _, _ in editingCategories = false }
             .overlay(alignment: .top) {
                 if let toast { Toast(text: toast) }
             }
@@ -128,33 +145,40 @@ struct BalanceView: View {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 3), spacing: 10) {
                 ForEach(store.categories(income: income)) { c in
                     Button {
-                        add(c)
+                        // In edit mode a tap removes the category (after asking); otherwise it adds.
+                        if editingCategories { pendingCategory = c } else { add(c) }
                     } label: {
-                        CategoryTile(emoji: c.emoji, label: c.label)
+                        CategoryTile(emoji: c.emoji, label: c.label, removable: editingCategories)
                     }
                     .buttonStyle(.plain)
-                    .contextMenu {
-                        Button(role: .destructive) {
-                            store.deleteCategory(c.key)
-                        } label: {
-                            Label("Delete Category", systemImage: "trash")
-                        }
+                    .accessibilityHint(editingCategories ? "Deletes this category" : "Adds the amount")
+                }
+                if !editingCategories {
+                    Button {
+                        showNewCategory = true
+                    } label: {
+                        CategoryTile(emoji: nil, label: "New")
                     }
+                    .buttonStyle(.plain)
                 }
-                Button {
-                    showNewCategory = true
-                } label: {
-                    CategoryTile(emoji: nil, label: "New")
-                }
-                .buttonStyle(.plain)
             }
+            .animation(.snappy, value: editingCategories)
             .listRowInsets(EdgeInsets())
             .listRowBackground(Color.clear)
         } header: {
-            Text(repeatFreq != nil ? "Tap a category to make it repeat"
-                 : income ? "Tap where the money came from" : "Tap a category to add")
-        } footer: {
-            Text("Touch and hold a category to delete it.")
+            HStack {
+                Text(editingCategories ? "Tap a category to delete it"
+                     : repeatFreq != nil ? "Tap a category to make it repeat"
+                     : income ? "Tap where the money came from" : "Tap a category to add")
+                Spacer()
+                if !store.categories(income: income).isEmpty {
+                    Button(editingCategories ? "Done" : "Edit") {
+                        withAnimation { editingCategories.toggle() }
+                    }
+                    .font(.subheadline.weight(editingCategories ? .semibold : .regular))
+                    .textCase(nil)
+                }
+            }
         }
     }
 
@@ -314,9 +338,11 @@ private struct MiniStat: View {
 }
 
 /// A category button in the grid. `emoji == nil` draws the "New" tile.
+/// `removable` adds the red badge used in edit mode.
 struct CategoryTile: View {
     let emoji: String?
     let label: String
+    var removable = false
 
     var body: some View {
         VStack(spacing: 4) {
@@ -334,6 +360,22 @@ struct CategoryTile: View {
         }
         .frame(maxWidth: .infinity, minHeight: 84)
         .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay {
+            if removable {
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .strokeBorder(Color.red.opacity(0.35), lineWidth: 1.5)
+            }
+        }
+        .overlay(alignment: .topLeading) {
+            if removable {
+                Image(systemName: "minus.circle.fill")
+                    .font(.title3)
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(Color.white, Color.red)
+                    .padding(6)
+                    .transition(.scale.combined(with: .opacity))
+            }
+        }
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
     }
 }

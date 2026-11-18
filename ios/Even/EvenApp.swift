@@ -25,6 +25,7 @@ enum Launch {
     static var demo: Bool { args.contains("-demo") }
     static var forceSignIn: Bool { args.contains("-signin") }
     static var showRecurring: Bool { args.contains("-recurring") }
+    static var editCategories: Bool { args.contains("-editcategories") }
     static var tab: Int {
         guard let i = args.firstIndex(of: "-tab"), i + 1 < args.count else { return 0 }
         switch args[i + 1] {

@@ -101,6 +101,7 @@ jobs:
           shoot 3-stats -demo -tab stats
           shoot 4-account -demo -tab account
           shoot 5-normal-start
+          shoot 6-edit-categories -demo -editcategories
           ls ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -i even && echo "::error::Crash report found for Even"
           exit 0
 
