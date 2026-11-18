@@ -46,7 +46,7 @@ final class AuthModel {
         if let handle { Auth.auth().removeStateDidChangeListener(handle) }
     }
 
-    var email: String { user?.email ?? "Unknown" }
+    var email: String { user?.email ?? (Launch.demo ? "you@example.com" : "Unknown") }
 
     func signIn(email: String, password: String) async throws {
         _ = try await Auth.auth().signIn(withEmail: email, password: password)
@@ -63,6 +63,18 @@ final class AuthModel {
     func signOut() {
         guard FirebaseSetup.isConfigured else { return }
         try? Auth.auth().signOut()
+    }
+
+    /// Deletes everything: first the data in Firestore, then the sign-in account.
+    /// Firebase asks for a recent sign-in before deleting, so the password is checked again.
+    func deleteAccount(password: String) async throws {
+        guard let user = Auth.auth().currentUser, let email = user.email else {
+            throw NSError(domain: "Even", code: 1, userInfo: [NSLocalizedDescriptionKey: "You're not signed in."])
+        }
+        let credential = EmailAuthProvider.credential(withEmail: email, password: password)
+        _ = try await user.reauthenticate(with: credential)
+        try await Store.deleteAllData(uid: user.uid)
+        try await user.delete()
     }
 
     /// A friendly message for a Firebase sign-in error.

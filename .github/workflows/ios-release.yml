@@ -1,0 +1,106 @@
+name: Send iPhone app to TestFlight
+
+# Builds the iPhone app, signs it with Apple's cloud signing and uploads it to
+# App Store Connect, where it appears in TestFlight (and can be sent for App
+# Store review). Run it by hand: Actions → "Send iPhone app to TestFlight" →
+# Run workflow. Needs a paid Apple Developer account and four repository
+# secrets; see ios/APP_STORE.md.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  upload:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    env:
+      ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+      ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+      APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Check the App Store Connect secrets
+        run: |
+          missing=""
+          for name in ASC_KEY_ID ASC_ISSUER_ID ASC_KEY_P8 APPLE_TEAM_ID; do
+            if [ -z "${!name}" ]; then
+              echo "::error::The secret $name is missing. See ios/APP_STORE.md, step 4."
+              missing=yes
+            fi
+          done
+          [ -z "$missing" ]
+
+      - name: Make the Xcode project
+        working-directory: ios
+        run: |
+          brew install xcodegen
+          xcodegen generate
+
+      - name: Save the App Store Connect key
+        run: |
+          mkdir -p "$RUNNER_TEMP/keys"
+          printf '%s\n' "$ASC_KEY_P8" > "$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8"
+          echo "ASC_KEY_PATH=$RUNNER_TEMP/keys/AuthKey_$ASC_KEY_ID.p8" >> "$GITHUB_ENV"
+
+      - name: Build and sign
+        working-directory: ios
+        run: |
+          set +e
+          # Each upload needs a higher build number: use this workflow's run number.
+          xcodebuild -project Even.xcodeproj -scheme Even -configuration Release \
+            -destination "generic/platform=iOS" -archivePath build/Even.xcarchive \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic \
+            CURRENT_PROJECT_VERSION="${{ github.run_number }}" \
+            archive > archive.log 2>&1
+          status=$?
+          tail -n 40 archive.log
+          grep -E "error: " archive.log | sort -u | head -n 10 | while IFS= read -r line; do
+            echo "::error::${line}"
+          done
+          exit $status
+
+      - name: Upload to App Store Connect
+        working-directory: ios
+        run: |
+          cat > ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${APPLE_TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>uploadSymbols</key><true/>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+          </dict>
+          </plist>
+          EOF
+          set +e
+          xcodebuild -exportArchive -archivePath build/Even.xcarchive \
+            -exportOptionsPlist ExportOptions.plist -exportPath build/export \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" > export.log 2>&1
+          status=$?
+          tail -n 40 export.log
+          grep -E "error: |Error " export.log | sort -u | head -n 10 | while IFS= read -r line; do
+            echo "::error::${line}"
+          done
+          if [ $status -eq 0 ]; then
+            echo "::notice::Uploaded build ${{ github.run_number }}. It shows up in App Store Connect → TestFlight after Apple finishes processing it (usually 5–30 minutes)."
+          fi
+          exit $status
+
+      - name: Remove the key
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/keys"

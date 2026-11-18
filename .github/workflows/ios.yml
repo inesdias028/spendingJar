@@ -104,6 +104,40 @@ jobs:
           ls ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -i even && echo "::error::Crash report found for Even"
           exit 0
 
+      # Screenshots in the size the App Store asks for (the biggest iPhone, 6.9-inch),
+      # with sample data and a clean status bar.
+      - name: App Store screenshots
+        working-directory: ios
+        run: |
+          set +e
+          UDID=$(xcrun simctl list devices available -j | python3 -c "
+          import sys, json
+          d = json.load(sys.stdin)['devices']
+          phones = [x for k, v in d.items() if 'iOS' in k for x in v if x['name'].startswith('iPhone')]
+          big = [x for x in phones if 'Pro Max' in x['name']] or [x for x in phones if 'Plus' in x['name']] or phones
+          print(big[-1]['udid'])")
+          xcrun simctl boot "$UDID"
+          xcrun simctl bootstatus "$UDID" -b
+          xcrun simctl ui "$UDID" appearance light
+          xcrun simctl status_bar "$UDID" override --time "9:41" --dataNetwork wifi --wifiMode active \
+            --wifiBars 3 --cellularMode active --cellularBars 4 --batteryState charged --batteryLevel 100
+          xcrun simctl install "$UDID" simbuild/Build/Products/Debug-iphonesimulator/Even.app
+          APP=io.github.inesdias028.even
+          mkdir -p shots/app-store
+          for spec in "1-balance:-demo" "2-stats:-demo -tab stats" "3-recurring:-demo -recurring" \
+                      "4-account:-demo -tab account" "5-signin:-signin"; do
+            name=${spec%%:*}
+            args=${spec#*:}
+            xcrun simctl terminate "$UDID" $APP >/dev/null 2>&1
+            xcrun simctl launch "$UDID" $APP $args
+            sleep 12
+            xcrun simctl io "$UDID" screenshot "shots/app-store/$name.png"
+          done
+          device=$(xcrun simctl list devices | grep "$UDID" | sed 's/ (.*//' | xargs)
+          size=$(sips -g pixelWidth -g pixelHeight shots/app-store/1-balance.png | awk '/pixel/ {print $2}' | xargs | tr ' ' 'x')
+          echo "::notice::App Store screenshots: $device, $size pixels"
+          exit 0
+
       - name: Publish screenshots
         if: always()
         working-directory: ios/shots

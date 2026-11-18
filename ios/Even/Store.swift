@@ -67,6 +67,20 @@ final class Store {
             e(50, "gift_in", ago(12, 15)),
             e(120, "shopping", ago(15, 16)),
         ].sorted { $0.date > $1.date }
+        func soon(_ days: Int) -> Date { cal.date(byAdding: .day, value: days, to: dayStart(now)) ?? now }
+        func r(_ name: String, _ amount: Double, _ key: String, _ next: Date) -> Recurring {
+            let c = byKey[key]!
+            return Recurring(id: "demo-r-\(name)", name: name, amount: amount, income: c.income, category: c.key,
+                             emoji: c.emoji, label: c.label, freq: .month,
+                             anchorDay: cal.component(.day, from: next), next: next)
+        }
+        // Future dates, so demo mode never adds them as entries.
+        recurring = [
+            r("Salary", 1450, "salary", soon(14)),
+            r("Rent", 650, "other", soon(12)),
+            r("Netflix", 13.99, "fun", soon(5)),
+            r("Gym", 35, "other", soon(9)),
+        ]
         ready = true
     }
 
@@ -167,6 +181,26 @@ final class Store {
         ]) { [weak self] err in
             if let err { self?.fail(err) }
         }
+    }
+
+    /// Deletes all of a person's data (entries and settings), in batches.
+    static func deleteAllData(uid: String) async throws {
+        let db = Firestore.firestore()
+        let userDoc = db.collection("users").document(uid)
+        let snapshot = try await userDoc.collection("expenses").getDocuments()
+        var batch = db.batch()
+        var count = 0
+        for doc in snapshot.documents {
+            batch.deleteDocument(doc.reference)
+            count += 1
+            if count == 450 {
+                try await batch.commit()
+                batch = db.batch()
+                count = 0
+            }
+        }
+        batch.deleteDocument(userDoc)
+        try await batch.commit()
     }
 
     // MARK: - Numbers

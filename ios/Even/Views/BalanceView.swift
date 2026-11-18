@@ -10,7 +10,7 @@ struct BalanceView: View {
     /// How many entries the activity list shows; "Show More" adds another page.
     @State private var shown = 40
     @State private var showStartBalance = false
-    @State private var showRecurring = false
+    @State private var showRecurring = Launch.showRecurring
     @State private var showNewCategory = false
     @State private var pendingDelete: Entry?
     @State private var toast: String?

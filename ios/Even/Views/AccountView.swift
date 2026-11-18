@@ -1,9 +1,17 @@
 import SwiftUI
 
+/// Where the privacy policy is published (GitHub Pages, from privacy.html).
+let privacyPolicyURL = URL(string: "https://inesdias028.github.io/spendingJar/privacy.html")!
+
 struct AccountView: View {
     @Environment(Store.self) private var store
     @Environment(AuthModel.self) private var auth
     @State private var confirmSignOut = false
+    @State private var confirmDelete = false
+    @State private var askPassword = false
+    @State private var password = ""
+    @State private var deleting = false
+    @State private var deleteError: String?
 
     var body: some View {
         NavigationStack {
@@ -55,14 +63,74 @@ struct AccountView: View {
                 }
 
                 Section {
+                    Link(destination: privacyPolicyURL) {
+                        Label("Privacy Policy", systemImage: "hand.raised.fill")
+                    }
+                }
+
+                Section {
                     Button("Sign Out", role: .destructive) { confirmSignOut = true }
                         .frame(maxWidth: .infinity)
                 }
+
+                if !store.demo {
+                    Section {
+                        Button("Delete Account", role: .destructive) { confirmDelete = true }
+                            .frame(maxWidth: .infinity)
+                    } footer: {
+                        Text("Deletes your account and all your entries, on the iPhone and on the website. This can\u{2019}t be undone.")
+                    }
+                }
             }
             .navigationTitle("Account")
+            .disabled(deleting)
+            .overlay {
+                if deleting {
+                    ProgressView("Deleting\u{2026}")
+                        .padding(24)
+                        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                }
+            }
             .confirmationDialog("Sign out?", isPresented: $confirmSignOut, titleVisibility: .visible) {
                 Button("Sign Out", role: .destructive) { auth.signOut() }
             }
+            .confirmationDialog("Delete your account?", isPresented: $confirmDelete, titleVisibility: .visible) {
+                Button("Delete Account and All Data", role: .destructive) {
+                    password = ""
+                    askPassword = true
+                }
+            } message: {
+                Text("Your balance, entries, categories and recurring items are deleted for good, on every device.")
+            }
+            .alert("Enter your password", isPresented: $askPassword) {
+                SecureField("Password", text: $password)
+                Button("Delete", role: .destructive) {
+                    Task { await deleteAccount() }
+                }
+                Button("Cancel", role: .cancel) { password = "" }
+            } message: {
+                Text("To keep your account safe, confirm it\u{2019}s you.")
+            }
+            .alert(
+                "Couldn\u{2019}t delete the account",
+                isPresented: Binding(get: { deleteError != nil }, set: { if !$0 { deleteError = nil } })
+            ) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(deleteError ?? "")
+            }
+        }
+    }
+
+    private func deleteAccount() async {
+        let typed = password
+        password = ""
+        deleting = true
+        defer { deleting = false }
+        do {
+            try await auth.deleteAccount(password: typed)
+        } catch {
+            deleteError = AuthModel.message(for: error)
         }
     }
 }

@@ -44,7 +44,7 @@ You need: the iPhone, a cable, your Apple ID, and one of these free Windows prog
 
 - The installation lasts **7 days**. After that the app won't open until you install it again (Sideloadly: do step 2a.3 again; AltStore does it for you). **Your data is safe**: it's in your account.
 - At most **3** apps installed this way at the same time.
-- No App Store or TestFlight. For those you need the paid Apple Developer account (99 USD a year). The same code works then; only signing is added.
+- No App Store or TestFlight. For those you need the paid Apple Developer account (99 USD a year). Everything else is ready: see **[APP_STORE.md](APP_STORE.md)** for the steps.
 
 ## Signing in
 
