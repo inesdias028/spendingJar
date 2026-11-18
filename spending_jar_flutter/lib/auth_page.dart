@@ -212,7 +212,7 @@ class _AuthPageState extends State<AuthPage> {
 
                   const SizedBox(height: 6),
                   CupertinoButton.filled(
-                    borderRadius: BorderRadius.circular(12),
+                    borderRadius: BorderRadius.circular(30),
                     padding: const EdgeInsets.symmetric(vertical: 15),
                     onPressed: _busy ? null : _submit,
                     child: _busy
@@ -234,7 +234,7 @@ class _AuthPageState extends State<AuthPage> {
                     const SizedBox(height: 18),
                     CupertinoButton(
                       color: AppColors.card,
-                      borderRadius: BorderRadius.circular(12),
+                      borderRadius: BorderRadius.circular(30),
                       padding: const EdgeInsets.symmetric(vertical: 15),
                       onPressed: _busy ? null : _google,
                       child: Row(
@@ -295,7 +295,7 @@ class _Notice extends StatelessWidget {
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: color.of(context).withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
       ),
       child: Text(text, style: TextStyle(color: color.of(context), fontSize: 15)),
     );

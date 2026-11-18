@@ -54,57 +54,65 @@ class _StatsPageState extends State<StatsPage> {
           title: 'Stats',
           controller: _scroll,
           children: [
-            // Period navigation
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 8),
-              child: Row(
-                children: [
-                  CupertinoButton(
-                    padding: const EdgeInsets.all(8),
-                    onPressed: () => setState(() => _offset--),
-                    child: const Icon(CupertinoIcons.chevron_left, size: 22),
-                  ),
-                  Expanded(
-                    child: Text(r.label,
-                        textAlign: TextAlign.center, style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
-                  ),
-                  CupertinoButton(
-                    padding: const EdgeInsets.all(8),
-                    onPressed: _offset < 0 ? () => setState(() => _offset++) : null,
-                    child: const Icon(CupertinoIcons.chevron_right, size: 22),
-                  ),
-                ],
-              ),
-            ),
-
-            // Net for the period, big
+            // Month and what you saved, in one card (like the iPhone app).
+            const SizedBox(height: 4),
             InsetCard(
-              padding: const EdgeInsets.fromLTRB(18, 16, 18, 16),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(net >= 0 ? 'You saved' : 'You spent more than you earned',
-                      style: TextStyle(fontSize: 15, color: AppColors.muted.of(context))),
-                  FittedBox(
-                    fit: BoxFit.scaleDown,
-                    child: Text(signedEuro(net),
-                        style: TextStyle(
-                            fontSize: 36,
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.8,
-                            color: AppColors.money(context, net))),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 2),
+                    child: Row(
+                      children: [
+                        CupertinoButton(
+                          padding: const EdgeInsets.all(10),
+                          onPressed: () => setState(() => _offset--),
+                          child: const Icon(CupertinoIcons.chevron_left, size: 20),
+                        ),
+                        Expanded(
+                          child: Text(r.label,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(fontSize: 17, fontWeight: FontWeight.w600)),
+                        ),
+                        CupertinoButton(
+                          padding: const EdgeInsets.all(10),
+                          onPressed: _offset < 0 ? () => setState(() => _offset++) : null,
+                          child: const Icon(CupertinoIcons.chevron_right, size: 20),
+                        ),
+                      ],
+                    ),
                   ),
-                  const SizedBox(height: 12),
-                  _SplitBar(inc: t.inc, out: t.out),
-                  const SizedBox(height: 8),
-                  Row(
-                    children: [
-                      _Dot(color: AppColors.green.of(context)),
-                      Text(' In ${signedEuro(t.inc)}', style: const TextStyle(fontSize: 13)),
-                      const SizedBox(width: 14),
-                      _Dot(color: AppColors.red.of(context)),
-                      Text(' Out ${euro(-t.out)}', style: const TextStyle(fontSize: 13)),
-                    ],
+                  Container(margin: const EdgeInsets.only(left: 18), height: 0.5, color: AppColors.separator.of(context)),
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(18, 14, 18, 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(net >= 0 ? 'You saved' : 'You spent more than you earned',
+                            style: TextStyle(fontSize: 15, color: AppColors.muted.of(context))),
+                        FittedBox(
+                          fit: BoxFit.scaleDown,
+                          child: Text(signedEuro(net),
+                              style: TextStyle(
+                                  fontSize: 36,
+                                  fontWeight: FontWeight.w700,
+                                  letterSpacing: -0.8,
+                                  color: AppColors.money(context, net))),
+                        ),
+                        const SizedBox(height: 12),
+                        _SplitBar(inc: t.inc, out: t.out),
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            _Dot(color: AppColors.green.of(context)),
+                            Text(' ${signedEuro(t.inc)}', style: const TextStyle(fontSize: 13)),
+                            const SizedBox(width: 14),
+                            _Dot(color: AppColors.red.of(context)),
+                            Text(' ${euro(-t.out)}', style: const TextStyle(fontSize: 13)),
+                          ],
+                        ),
+                      ],
+                    ),
                   ),
                 ],
               ),
@@ -113,7 +121,7 @@ class _StatsPageState extends State<StatsPage> {
             const GroupHeader('Day by day'),
             _NetChart(buckets: r.buckets, sums: sums),
 
-            CupertinoListSection.insetGrouped(
+            InsetSection(
               header: SectionHeader('Balance'),
               children: [
                 CupertinoListTile(
@@ -141,7 +149,7 @@ class _StatsPageState extends State<StatsPage> {
                 ),
               ),
             if (spendRows.isNotEmpty)
-              CupertinoListSection.insetGrouped(
+              InsetSection(
                 header: SectionHeader('Spending by category'),
                 children: [
                   for (final g in spendRows)
@@ -149,14 +157,14 @@ class _StatsPageState extends State<StatsPage> {
                 ],
               ),
             if (earnRows.isNotEmpty)
-              CupertinoListSection.insetGrouped(
+              InsetSection(
                 header: SectionHeader('Income by source'),
                 children: [
                   for (final g in earnRows)
                     _CategoryRow(group: g, total: t.inc, top: earnRows.first.total, color: AppColors.green),
                 ],
               ),
-            CupertinoListSection.insetGrouped(
+            InsetSection(
               header: const SectionHeader('Last 12 months'),
               children: [
                 // Months with nothing in them are left out (except this month).

@@ -430,6 +430,27 @@ class Store extends ChangeNotifier {
     super.dispose();
   }
 
+  /// Deletes all of this person's entries and settings in Firestore (for Delete Account).
+  /// Stops listening first, so the screens don't show an error while it happens.
+  Future<void> deleteAllData() async {
+    if (demo) return;
+    await _userSub?.cancel();
+    await _expSub?.cancel();
+    final snapshot = await _expCol.get();
+    var batch = _db.batch();
+    var count = 0;
+    for (final doc in snapshot.docs) {
+      batch.delete(doc.reference);
+      if (++count == 450) {
+        await batch.commit();
+        batch = _db.batch();
+        count = 0;
+      }
+    }
+    batch.delete(_userDoc);
+    await batch.commit();
+  }
+
   // ---- numbers ----
 
   /// Your balance right now: what you started with, plus all income, minus all spending.

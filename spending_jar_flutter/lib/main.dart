@@ -1,3 +1,5 @@
+import 'dart:ui' show ImageFilter;
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
@@ -37,7 +39,11 @@ class AppColors {
   static const green = CupertinoColors.systemGreen;
   static const red = CupertinoColors.systemRed;
   static const orange = CupertinoColors.systemOrange;
-  static const blue = CupertinoColors.systemBlue;
+  /// Even teal, the accent colour of the iPhone app (a bit lighter in dark mode).
+  static const accent = CupertinoDynamicColor.withBrightness(color: Color(0xFF1F8A8A), darkColor: Color(0xFF3DB8B2));
+
+  /// Buttons and links use the accent colour (the name stays for older code).
+  static const blue = accent;
   static const label = CupertinoColors.label;
   static const muted = CupertinoColors.secondaryLabel;
   static const faint = CupertinoColors.tertiaryLabel;
@@ -74,7 +80,7 @@ class SpendingJarApp extends StatelessWidget {
             color: CupertinoColors.inactiveGray,
           ),
         ),
-        primaryColor: CupertinoColors.systemBlue,
+        primaryColor: AppColors.accent,
         scaffoldBackgroundColor: AppColors.background,
         barBackgroundColor: CupertinoColors.systemGroupedBackground,
       ),
@@ -162,108 +168,172 @@ class _SignedInState extends State<_SignedIn> with WidgetsBindingObserver {
   }
 }
 
-/// The three tabs, with the translucent iOS tab bar.
-class HomeShell extends StatelessWidget {
+/// The three tabs, with a floating "glass" tab bar like the iPhone app (iOS 26).
+class HomeShell extends StatefulWidget {
   const HomeShell({super.key, required this.store});
   final Store store;
 
   @override
+  State<HomeShell> createState() => _HomeShellState();
+}
+
+class _HomeShellState extends State<HomeShell> {
+  int _tab = 0;
+  final _navigators = List.generate(3, (_) => GlobalKey<NavigatorState>());
+
+  static const _items = [
+    (CupertinoIcons.creditcard, CupertinoIcons.creditcard_fill, 'Balance'),
+    (CupertinoIcons.chart_bar, CupertinoIcons.chart_bar_fill, 'Stats'),
+    (CupertinoIcons.person_crop_circle, CupertinoIcons.person_crop_circle_fill, 'Account'),
+  ];
+
+  void _select(int i) {
+    if (i == _tab) {
+      // Tapping the open tab again goes back to its first screen.
+      _navigators[i].currentState?.popUntil((r) => r.isFirst);
+    } else {
+      setState(() => _tab = i);
+    }
+  }
+
+  @override
   Widget build(BuildContext context) {
-    return CupertinoTabScaffold(
-      tabBar: LiftedTabBar(
-        height: 62,
-        iconSize: 30,
-        backgroundColor: const CupertinoDynamicColor.withBrightness(
-          color: Color(0xCCF9F9F9),
-          darkColor: Color(0xCC1D1D1D),
+    final mq = MediaQuery.of(context);
+    // Home-screen web apps often report no safe area; keep the bar off the bottom edge anyway.
+    final bottom = mq.viewPadding.bottom < 14 ? 14.0 : mq.viewPadding.bottom;
+    const barHeight = 62.0;
+    final reserved = bottom + barHeight + 12;
+    final pages = [
+      BalancePage(store: widget.store),
+      StatsPage(store: widget.store),
+      AccountPage(store: widget.store),
+    ];
+    return Stack(
+      children: [
+        // Pages leave room at the bottom for the floating bar.
+        MediaQuery(
+          data: mq.copyWith(
+            padding: mq.padding.copyWith(bottom: reserved),
+            viewPadding: mq.viewPadding.copyWith(bottom: reserved),
+          ),
+          child: IndexedStack(
+            index: _tab,
+            children: [
+              for (var i = 0; i < 3; i++)
+                CupertinoTabView(navigatorKey: _navigators[i], builder: (_) => pages[i]),
+            ],
+          ),
         ),
-        items: const [
-          BottomNavigationBarItem(
-            icon: Icon(CupertinoIcons.creditcard),
-            activeIcon: Icon(CupertinoIcons.creditcard_fill),
-            label: 'Balance',
+        Positioned(
+          left: 0,
+          right: 0,
+          bottom: bottom,
+          child: Center(
+            child: GlassTabBar(items: _items, current: _tab, onTap: _select, height: barHeight),
           ),
-          BottomNavigationBarItem(
-            icon: Icon(CupertinoIcons.chart_bar),
-            activeIcon: Icon(CupertinoIcons.chart_bar_fill),
-            label: 'Stats',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(CupertinoIcons.person_crop_circle),
-            activeIcon: Icon(CupertinoIcons.person_crop_circle_fill),
-            label: 'Account',
-          ),
-        ],
+        ),
+      ],
+    );
+  }
+}
+
+/// A floating, frosted capsule with the tab buttons; the open tab sits on a soft pill.
+class GlassTabBar extends StatelessWidget {
+  const GlassTabBar({super.key, required this.items, required this.current, required this.onTap, this.height = 62});
+  final List<(IconData, IconData, String)> items;
+  final int current;
+  final ValueChanged<int> onTap;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final glass = const CupertinoDynamicColor.withBrightness(color: Color(0xC7FFFFFF), darkColor: Color(0xB82C2C2E)).of(context);
+    final edge = const CupertinoDynamicColor.withBrightness(color: Color(0x14000000), darkColor: Color(0x24FFFFFF)).of(context);
+    final pill = const CupertinoDynamicColor.withBrightness(color: Color(0x12000000), darkColor: Color(0x1FFFFFFF)).of(context);
+    final radius = BorderRadius.circular(height / 2);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        borderRadius: radius,
+        boxShadow: const [BoxShadow(color: Color(0x26000000), blurRadius: 24, offset: Offset(0, 8))],
       ),
-      tabBuilder: (context, i) => CupertinoTabView(
-        builder: (_) => switch (i) {
-          0 => BalancePage(store: store),
-          1 => StatsPage(store: store),
-          _ => AccountPage(store: store),
-        },
+      child: ClipRRect(
+        borderRadius: radius,
+        child: BackdropFilter(
+          filter: ImageFilter.blur(sigmaX: 18, sigmaY: 18),
+          child: Container(
+            height: height,
+            padding: const EdgeInsets.all(4),
+            decoration: BoxDecoration(color: glass, borderRadius: radius, border: Border.all(color: edge, width: 0.5)),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                for (var i = 0; i < items.length; i++)
+                  GestureDetector(
+                    behavior: HitTestBehavior.opaque,
+                    onTap: () => onTap(i),
+                    child: AnimatedContainer(
+                      duration: const Duration(milliseconds: 220),
+                      curve: Curves.easeOutCubic,
+                      width: 88,
+                      decoration: BoxDecoration(
+                        color: i == current ? pill : const Color(0x00000000),
+                        borderRadius: BorderRadius.circular((height - 8) / 2),
+                      ),
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(
+                            i == current ? items[i].$2 : items[i].$1,
+                            size: 25,
+                            color: (i == current ? AppColors.accent : AppColors.label).of(context),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            items[i].$3,
+                            style: TextStyle(
+                              fontSize: 10.5,
+                              fontWeight: FontWeight.w600,
+                              color: (i == current ? AppColors.accent : AppColors.label).of(context),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
       ),
     );
   }
 }
 
-/// The iOS tab bar, a bit taller, with its buttons kept clear of the bottom edge.
-///
-/// On an iPhone home-screen web app the browser often reports no safe area, so
-/// the normal tab bar puts its buttons right on top of the home indicator.
-/// This one always leaves at least [minBottom] of space under them.
-class LiftedTabBar extends CupertinoTabBar {
-  const LiftedTabBar({
-    super.key,
-    required super.items,
-    super.onTap,
-    super.currentIndex,
-    super.backgroundColor,
-    super.activeColor,
-    super.iconSize,
-    super.height,
-    this.minBottom = 22,
-  });
-
-  final double minBottom;
-
-  // Includes the lift, so pages leave room for the whole bar.
-  @override
-  Size get preferredSize => Size.fromHeight(height + minBottom);
+/// A round "glass" button for the top bar, like the iPhone app's toolbar buttons.
+class GlassIconButton extends StatelessWidget {
+  const GlassIconButton({super.key, required this.icon, required this.onPressed, this.label});
+  final IconData icon;
+  final VoidCallback onPressed;
+  final String? label;
 
   @override
   Widget build(BuildContext context) {
-    final mq = MediaQuery.of(context);
-    final bottom = mq.viewPadding.bottom < minBottom ? minBottom : mq.viewPadding.bottom;
-    return MediaQuery(
-      data: mq.copyWith(viewPadding: mq.viewPadding.copyWith(bottom: bottom)),
-      child: Builder(builder: super.build),
-    );
-  }
-
-  // CupertinoTabScaffold copies the bar to set the selected tab; keep it a LiftedTabBar.
-  @override
-  LiftedTabBar copyWith({
-    Key? key,
-    List<BottomNavigationBarItem>? items,
-    Color? backgroundColor,
-    Color? activeColor,
-    Color? inactiveColor,
-    double? iconSize,
-    double? height,
-    Border? border,
-    int? currentIndex,
-    ValueChanged<int>? onTap,
-  }) {
-    return LiftedTabBar(
-      key: key ?? this.key,
-      items: items ?? this.items,
-      backgroundColor: backgroundColor ?? this.backgroundColor,
-      activeColor: activeColor ?? this.activeColor,
-      iconSize: iconSize ?? this.iconSize,
-      height: height ?? this.height,
-      currentIndex: currentIndex ?? this.currentIndex,
-      onTap: onTap ?? this.onTap,
-      minBottom: minBottom,
+    return Semantics(
+      button: true,
+      label: label,
+      child: GestureDetector(
+        onTap: onPressed,
+        child: Container(
+          width: 40,
+          height: 40,
+          decoration: BoxDecoration(
+            color: AppColors.card.of(context),
+            shape: BoxShape.circle,
+            boxShadow: const [BoxShadow(color: Color(0x1F000000), blurRadius: 10, offset: Offset(0, 3))],
+          ),
+          child: Icon(icon, size: 21, color: AppColors.label.of(context)),
+        ),
+      ),
     );
   }
 }
@@ -324,8 +394,75 @@ class InsetCard extends StatelessWidget {
       margin: margin ?? const EdgeInsets.symmetric(horizontal: 20),
       padding: padding,
       clipBehavior: Clip.antiAlias,
-      decoration: BoxDecoration(color: AppColors.card.of(context), borderRadius: BorderRadius.circular(12)),
+      decoration: BoxDecoration(color: AppColors.card.of(context), borderRadius: BorderRadius.circular(kCardRadius)),
       child: child,
+    );
+  }
+}
+
+/// Corner radius of cards and grouped lists (iOS 26 uses big, soft corners).
+const double kCardRadius = 22;
+
+/// A group of rows on a rounded card, with an optional header and footer,
+/// like an inset grouped list on iOS 26.
+class InsetSection extends StatelessWidget {
+  const InsetSection({
+    super.key,
+    required this.children,
+    this.header,
+    this.footer,
+    this.margin,
+    this.hasLeading = true,
+  });
+
+  final List<Widget> children;
+  final Widget? header;
+  final Widget? footer;
+  final EdgeInsetsGeometry? margin;
+
+  /// Rows start with an icon or emoji, so dividers start after it.
+  final bool hasLeading;
+
+  @override
+  Widget build(BuildContext context) {
+    final divider = Container(
+      margin: EdgeInsets.only(left: hasLeading ? 62 : 16),
+      height: 0.5,
+      color: AppColors.separator.of(context),
+    );
+    return Padding(
+      padding: margin ?? const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          if (header != null)
+            Padding(padding: const EdgeInsets.fromLTRB(16, 22, 16, 7), child: header!)
+          else
+            const SizedBox(height: 22),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(kCardRadius),
+            child: ColoredBox(
+              color: AppColors.card.of(context),
+              child: Column(
+                children: [
+                  for (var i = 0; i < children.length; i++) ...[
+                    if (i > 0) divider,
+                    children[i],
+                  ],
+                ],
+              ),
+            ),
+          ),
+          if (footer != null)
+            Padding(
+              padding: const EdgeInsets.fromLTRB(16, 7, 16, 0),
+              child: DefaultTextStyle.merge(
+                style: TextStyle(fontSize: 13, color: AppColors.muted.of(context)),
+                child: footer!,
+              ),
+            ),
+        ],
+      ),
     );
   }
 }
@@ -343,8 +480,7 @@ class GroupHeader extends StatelessWidget {
       child: Row(
         children: [
           Expanded(
-            child: Text(text.toUpperCase(),
-                style: TextStyle(fontSize: 13, color: AppColors.muted.of(context), letterSpacing: -0.08)),
+            child: Text(text, style: headerStyle(context)),
           ),
           if (trailing != null) trailing!,
         ],
@@ -353,7 +489,11 @@ class GroupHeader extends StatelessWidget {
   }
 }
 
-/// Header for a CupertinoListSection: small grey capitals, like iOS Settings.
+/// Grey sentence-case heading style above groups (iOS 26).
+TextStyle headerStyle(BuildContext context) =>
+    TextStyle(fontSize: 15, fontWeight: FontWeight.w500, letterSpacing: -0.2, color: AppColors.muted.of(context));
+
+/// Header for an [InsetSection].
 class SectionHeader extends StatelessWidget {
   const SectionHeader(this.text, {super.key, this.trailing});
   final String text;
@@ -361,22 +501,13 @@ class SectionHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final style = TextStyle(
-      fontSize: 13,
-      fontWeight: FontWeight.w400,
-      letterSpacing: -0.08,
-      color: AppColors.muted.of(context),
-    );
     return DefaultTextStyle(
-      style: style,
-      child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 14, 16, 0),
-        child: Row(
-          children: [
-            Expanded(child: Text(text.toUpperCase())),
-            if (trailing != null) trailing!,
-          ],
-        ),
+      style: headerStyle(context),
+      child: Row(
+        children: [
+          Expanded(child: Text(text)),
+          if (trailing != null) trailing!,
+        ],
       ),
     );
   }

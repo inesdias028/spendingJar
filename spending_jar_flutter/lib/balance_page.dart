@@ -20,6 +20,9 @@ class _BalancePageState extends State<BalancePage> {
   bool _income = false;
   Period? _repeat; // null = one-off
 
+  /// Edit mode for the category grid: each tile shows a red badge to remove it.
+  bool _editingCategories = false;
+
   /// How many entries the activity list shows; "Show More" adds another page.
   static const _page = 40;
   int _shown = _page;
@@ -60,28 +63,39 @@ class _BalancePageState extends State<BalancePage> {
     setState(() => _repeat = null);
   }
 
-  void _categoryMenu(Category c) {
+  Future<void> _confirmDeleteCategory(Category c) async {
+    final ok = await confirmIos(
+      context,
+      'Delete \u201C${c.label}\u201D?',
+      message: 'Past entries in this category stay in your list.',
+      ok: 'Delete Category',
+    );
+    if (!ok) return;
     HapticFeedback.mediumImpact();
+    store.deleteCategory(c.key);
+    if (store.categoriesOf(income: _income).isEmpty) setState(() => _editingCategories = false);
+  }
+
+  /// The Repeat menu, like the iPhone app's pull-down: Never, Weekly, Monthly, Yearly.
+  void _pickRepeat() {
+    // `sheetContext` is the menu's own context: popping it closes only the menu.
+    Widget option(BuildContext sheetContext, String label, Period? p) => CupertinoActionSheetAction(
+          isDefaultAction: _repeat == p,
+          onPressed: () {
+            Navigator.pop(sheetContext);
+            setState(() => _repeat = p);
+          },
+          child: Text(label),
+        );
     showCupertinoModalPopup<void>(
       context: context,
       builder: (ctx) => CupertinoActionSheet(
-        title: Text('${c.emoji}  ${c.label}'),
-        message: const Text('Past entries in this category stay in your list.'),
+        title: const Text('Repeat'),
         actions: [
-          CupertinoActionSheetAction(
-            isDestructiveAction: true,
-            onPressed: () {
-              Navigator.pop(ctx);
-              store.deleteCategory(c.key);
-            },
-            child: const Text('Delete Category'),
-          ),
+          option(ctx, 'Never', null),
+          for (final p in Period.values) option(ctx, freqName(p), p),
         ],
-        cancelButton: CupertinoActionSheetAction(
-          isDefaultAction: true,
-          onPressed: () => Navigator.pop(ctx),
-          child: const Text('Cancel'),
-        ),
+        cancelButton: CupertinoActionSheetAction(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
       ),
     );
   }
@@ -109,10 +123,10 @@ class _BalancePageState extends State<BalancePage> {
           behavior: HitTestBehavior.translucent,
           child: LargeTitlePage(
             title: 'Balance',
-            trailing: CupertinoButton(
-              padding: EdgeInsets.zero,
+            trailing: GlassIconButton(
+              icon: CupertinoIcons.repeat,
+              label: 'Recurring',
               onPressed: () => presentSheet<void>(context, (_, c) => RecurringSheet(store: store, controller: c)),
-              child: const Icon(CupertinoIcons.repeat, size: 24),
             ),
             children: [
               const SizedBox(height: 4),
@@ -125,27 +139,45 @@ class _BalancePageState extends State<BalancePage> {
 
               // ---- New entry ----
               const GroupHeader('New entry'),
-              Segments<bool>(
-                value: _income,
-                items: const {false: 'Spending', true: 'Income'},
-                onChanged: (v) {
-                  HapticFeedback.selectionClick();
-                  setState(() => _income = v);
-                },
-              ),
-              const SizedBox(height: 10),
               InsetCard(
                 child: Column(
                   children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 12, 12, 4),
+                      child: SizedBox(
+                        width: double.infinity,
+                        child: CupertinoSlidingSegmentedControl<bool>(
+                          groupValue: _income,
+                          thumbColor: const CupertinoDynamicColor.withBrightness(
+                              color: Color(0xFFFFFFFF), darkColor: Color(0xFF636366)),
+                          children: const {
+                            false: Padding(
+                                padding: EdgeInsets.symmetric(vertical: 6),
+                                child: Text('Spending', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500))),
+                            true: Padding(
+                                padding: EdgeInsets.symmetric(vertical: 6),
+                                child: Text('Income', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w500))),
+                          },
+                          onValueChanged: (v) {
+                            if (v == null) return;
+                            HapticFeedback.selectionClick();
+                            setState(() {
+                              _income = v;
+                              _editingCategories = false;
+                            });
+                          },
+                        ),
+                      ),
+                    ),
                     CupertinoTextField(
                       controller: _amount,
                       focusNode: _amountFocus,
                       keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       inputFormatters: [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))],
-                      textAlign: TextAlign.center,
+                      // Amount right after the sign, like the iPhone app ("− € 0,00").
                       placeholder: '0,00',
                       prefix: Padding(
-                        padding: const EdgeInsets.only(left: 18),
+                        padding: const EdgeInsets.only(left: 18, right: 6),
                         child: Text(
                           _income ? '+ €' : '− €',
                           style: TextStyle(
@@ -155,7 +187,6 @@ class _BalancePageState extends State<BalancePage> {
                           ),
                         ),
                       ),
-                      suffix: const SizedBox(width: 52),
                       placeholderStyle: TextStyle(
                           color: AppColors.faint.of(context), fontSize: 34, fontWeight: FontWeight.w600),
                       style: TextStyle(
@@ -188,36 +219,21 @@ class _BalancePageState extends State<BalancePage> {
                     ),
                     Container(
                         margin: const EdgeInsets.only(left: 16), height: 0.5, color: AppColors.separator.of(context)),
-                    Padding(
-                      padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
-                      child: Row(
-                        children: [
-                          const Text('Repeat', style: TextStyle(fontSize: 17)),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: CupertinoSlidingSegmentedControl<int>(
-                              groupValue: _repeat == null ? -1 : _repeat!.index,
-                              thumbColor: const CupertinoDynamicColor.withBrightness(
-                                  color: Color(0xFFFFFFFF), darkColor: Color(0xFF636366)),
-                              children: const {
-                                -1: Padding(
-                                    padding: EdgeInsets.symmetric(vertical: 5),
-                                    child: Text('Never', style: TextStyle(fontSize: 13))),
-                                0: Padding(
-                                    padding: EdgeInsets.symmetric(vertical: 5),
-                                    child: Text('Weekly', style: TextStyle(fontSize: 13))),
-                                1: Padding(
-                                    padding: EdgeInsets.symmetric(vertical: 5),
-                                    child: Text('Monthly', style: TextStyle(fontSize: 13))),
-                                2: Padding(
-                                    padding: EdgeInsets.symmetric(vertical: 5),
-                                    child: Text('Yearly', style: TextStyle(fontSize: 13))),
-                              },
-                              onValueChanged: (v) =>
-                                  setState(() => _repeat = (v == null || v < 0) ? null : Period.values[v]),
-                            ),
-                          ),
-                        ],
+                    GestureDetector(
+                      behavior: HitTestBehavior.opaque,
+                      onTap: _pickRepeat,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 14, 16, 14),
+                        child: Row(
+                          children: [
+                            const Text('Repeat', style: TextStyle(fontSize: 17)),
+                            const Spacer(),
+                            Text(_repeat == null ? 'Never' : freqName(_repeat!),
+                                style: TextStyle(fontSize: 17, color: AppColors.muted.of(context))),
+                            const SizedBox(width: 4),
+                            Icon(CupertinoIcons.chevron_up_chevron_down, size: 15, color: AppColors.muted.of(context)),
+                          ],
+                        ),
                       ),
                     ),
                   ],
@@ -225,11 +241,28 @@ class _BalancePageState extends State<BalancePage> {
               ),
 
               // ---- Categories ----
-              GroupHeader(_repeat != null
-                  ? 'Tap a category to make it repeat'
-                  : _income
-                      ? 'Tap where the money came from'
-                      : 'Tap a category to add'),
+              GroupHeader(
+                _editingCategories
+                    ? 'Tap a category to delete it'
+                    : _repeat != null
+                        ? 'Tap a category to make it repeat'
+                        : _income
+                            ? 'Tap where the money came from'
+                            : 'Tap a category to add',
+                trailing: cats.isEmpty
+                    ? null
+                    : GestureDetector(
+                        onTap: () => setState(() => _editingCategories = !_editingCategories),
+                        child: Text(
+                          _editingCategories ? 'Done' : 'Edit',
+                          style: TextStyle(
+                            fontSize: 15,
+                            fontWeight: _editingCategories ? FontWeight.w600 : FontWeight.w400,
+                            color: AppColors.accent.of(context),
+                          ),
+                        ),
+                      ),
+              ),
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: 20),
                 child: GridView.count(
@@ -245,25 +278,26 @@ class _BalancePageState extends State<BalancePage> {
                       CategoryTile(
                         emoji: c.emoji,
                         label: c.label,
-                        onTap: () => _add(c),
-                        onLongPress: () => _categoryMenu(c),
+                        removable: _editingCategories,
+                        // In edit mode a tap removes the category (after asking); otherwise it adds.
+                        onTap: () => _editingCategories ? _confirmDeleteCategory(c) : _add(c),
                       ),
-                    CategoryTile(
-                      emoji: '',
-                      label: 'New',
-                      isNew: true,
-                      onTap: () => presentSheet<void>(
-                        context,
-                        (_, ctl) => NewCategorySheet(store: store, income: _income, controller: ctl),
+                    if (!_editingCategories)
+                      CategoryTile(
+                        emoji: '',
+                        label: 'New',
+                        isNew: true,
+                        onTap: () => presentSheet<void>(
+                          context,
+                          (_, ctl) => NewCategorySheet(store: store, income: _income, controller: ctl),
+                        ),
                       ),
-                    ),
                   ],
                 ),
               ),
-              const GroupFooter('Hold a category to remove it.'),
 
               // ---- Activity ----
-              const GroupHeader('Activity'),
+              if (items.isEmpty) const GroupHeader('Activity'),
               if (items.isEmpty)
                 Padding(
                   padding: EdgeInsets.zero,
@@ -281,7 +315,7 @@ class _BalancePageState extends State<BalancePage> {
                 )
               else
                 for (final MapEntry(key: day, value: list) in days.entries)
-                  CupertinoListSection.insetGrouped(
+                  InsetSection(
                     header: _DayHeader(day: day, net: list.fold(0.0, (s, e) => s + e.signed)),
                     margin: const EdgeInsets.fromLTRB(20, 0, 20, 0),
                     children: [
@@ -516,15 +550,17 @@ class CategoryTile extends StatefulWidget {
     required this.emoji,
     required this.label,
     required this.onTap,
-    this.onLongPress,
     this.isNew = false,
+    this.removable = false,
   });
 
   final String emoji;
   final String label;
   final VoidCallback onTap;
-  final VoidCallback? onLongPress;
   final bool isNew;
+
+  /// Edit mode: shows the red badge; a tap then deletes (after asking).
+  final bool removable;
 
   @override
   State<CategoryTile> createState() => _CategoryTileState();
@@ -540,12 +576,6 @@ class _CategoryTileState extends State<CategoryTile> {
       onTapUp: (_) => setState(() => _down = false),
       onTapCancel: () => setState(() => _down = false),
       onTap: widget.onTap,
-      onLongPress: widget.onLongPress == null
-          ? null
-          : () {
-              setState(() => _down = false);
-              widget.onLongPress!();
-            },
       child: AnimatedScale(
         scale: _down ? 0.94 : 1,
         duration: const Duration(milliseconds: 120),
@@ -554,9 +584,12 @@ class _CategoryTileState extends State<CategoryTile> {
           duration: const Duration(milliseconds: 120),
           decoration: BoxDecoration(
             color: (_down ? CupertinoColors.systemGrey4 : AppColors.card).of(context),
-            borderRadius: BorderRadius.circular(14),
+            borderRadius: BorderRadius.circular(16),
+            border: widget.removable ? Border.all(color: AppColors.red.of(context).withValues(alpha: 0.35), width: 1.5) : null,
           ),
-          child: Column(
+          child: Stack(
+            children: [
+              Positioned.fill(child: Column(
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               if (widget.isNew)
@@ -577,6 +610,19 @@ class _CategoryTileState extends State<CategoryTile> {
                   ),
                 ),
               ),
+            ],
+          )),
+              if (widget.removable)
+                Positioned(
+                  left: 6,
+                  top: 6,
+                  child: Container(
+                    width: 22,
+                    height: 22,
+                    decoration: BoxDecoration(color: AppColors.red.of(context), shape: BoxShape.circle),
+                    child: const Icon(CupertinoIcons.minus, size: 14, color: CupertinoColors.white),
+                  ),
+                ),
             ],
           ),
         ),
@@ -670,7 +716,7 @@ class _BalanceSheetState extends State<BalanceSheet> {
             ],
           ),
         ),
-        CupertinoListSection.insetGrouped(
+        InsetSection(
           header: SectionHeader('How it adds up'),
           children: [
             CupertinoListTile(
@@ -760,7 +806,7 @@ class _NewCategorySheetState extends State<NewCategorySheet> {
       doneLabel: 'Add',
       onDone: _save,
       children: [
-        CupertinoListSection.insetGrouped(
+        InsetSection(
           children: [
             CupertinoTextField(
               controller: _emoji,

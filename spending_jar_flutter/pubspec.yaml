@@ -15,6 +15,7 @@ dependencies:
   cloud_firestore: any
   cupertino_icons: any
   cupertino_ui: ^1.1.6
+  url_launcher: ^6.3.3
 
 dev_dependencies:
   flutter_test:

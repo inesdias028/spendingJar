@@ -20,7 +20,7 @@ class RecurringSheet extends StatelessWidget {
         final incomes = items.where((r) => r.income).toList();
         final costs = items.where((r) => !r.income).toList();
 
-        Widget section(String title, List<Recurring> list) => CupertinoListSection.insetGrouped(
+        Widget section(String title, List<Recurring> list) => InsetSection(
               header: SectionHeader(title),
               children: [
                 for (final r in list)
@@ -70,7 +70,7 @@ class RecurringSheet extends StatelessWidget {
           children: [
             if (incomes.isNotEmpty) section('Money in', incomes),
             if (costs.isNotEmpty) section('Money out', costs),
-            CupertinoListSection.insetGrouped(
+            InsetSection(
               children: [
                 CupertinoListTile(
                   leading: Icon(CupertinoIcons.plus_circle_fill, color: AppColors.blue.of(context), size: 26),
@@ -158,7 +158,7 @@ class _AddRecurringSheetState extends State<_AddRecurringSheet> {
             _categoryKey = null;
           }),
         ),
-        CupertinoListSection.insetGrouped(
+        InsetSection(
           children: [
             CupertinoTextField(
               controller: _name,
