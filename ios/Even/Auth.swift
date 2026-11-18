@@ -4,20 +4,20 @@ import FirebaseCore
 import FirebaseAuth
 
 enum FirebaseSetup {
-    /// Uses GoogleService-Info.plist if it was added to the project; otherwise the
-    /// same public settings as the web app (lib/firebase_options.dart), so the
-    /// app works with your existing account straight away.
-    static func configure() {
-        if Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil {
-            FirebaseApp.configure()
-            return
-        }
-        let options = FirebaseOptions(googleAppID: "1:102458149662:web:75959c586fbf165c6cd70f",
-                                      gcmSenderID: "102458149662")
-        options.apiKey = "AIzaSyAr755xx0eOfCehPJpEUIsMUPqC52kBErM"
-        options.projectID = "spending-jar"
-        options.storageBucket = "spending-jar.firebasestorage.app"
-        FirebaseApp.configure(options: options)
+    /// True once Firebase is set up for this app.
+    private(set) static var isConfigured = false
+
+    /// Firebase on iPhone needs the iOS app's own settings: GoogleService-Info.plist,
+    /// downloaded from the Firebase console (Project settings → Your apps → iOS)
+    /// and placed in ios/Even/. The web app's settings can't be used: Firebase
+    /// stops the app at launch if the app ID isn't an iOS one.
+    /// Without the file the app shows a message instead of crashing.
+    @discardableResult
+    static func configure() -> Bool {
+        guard Bundle.main.path(forResource: "GoogleService-Info", ofType: "plist") != nil else { return false }
+        FirebaseApp.configure()
+        isConfigured = true
+        return true
     }
 }
 
@@ -30,7 +30,12 @@ final class AuthModel {
 
     @ObservationIgnored private var handle: AuthStateDidChangeListenerHandle?
 
-    init() {
+    /// `active: false` when Firebase isn't set up (demo mode or missing settings).
+    init(active: Bool) {
+        guard active else {
+            checked = true
+            return
+        }
         handle = Auth.auth().addStateDidChangeListener { [weak self] _, user in
             self?.user = user
             self?.checked = true
@@ -56,6 +61,7 @@ final class AuthModel {
     }
 
     func signOut() {
+        guard FirebaseSetup.isConfigured else { return }
         try? Auth.auth().signOut()
     }
 

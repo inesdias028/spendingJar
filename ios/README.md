@@ -62,11 +62,20 @@ open Even.xcodeproj
 
 With a Mac you can run it in the iPhone simulator, or on your phone straight from Xcode with your free Apple ID.
 
-## Firebase notes
+## Firebase setup (needed once)
 
-- No Firebase setup is needed to start. The app uses the same public settings as the website (`Auth.swift`).
-- **Recommended later:** in the Firebase console, open the project → **Add app → iOS**, use the bundle ID `io.github.inesdias028.even`, download **GoogleService-Info.plist** and put it in `ios/Even/`. The app uses it automatically when it's there. This is also the first step for Google sign-in.
-- If sign-in says requests are blocked, the API key may be limited to websites. Allow iOS apps for it in Google Cloud console → APIs & Services → Credentials.
+The iPhone app needs its own registration in the same Firebase project. Firebase on iPhone stops the app at launch if it's given the website's settings.
+
+1. console.firebase.google.com → project **spending-jar** → ⚙️ **Project settings** → **Your apps** → **Add app** → **iOS (Apple)**.
+2. **Apple bundle ID:** `io.github.inesdias028.even`. Nickname: `Even iPhone`. Then **Register app**.
+3. **Download GoogleService-Info.plist** and put it in `ios/Even/` (next to `EvenApp.swift`). Skip the other steps with **Next → Continue to console**.
+4. Commit and push it. The next build includes it automatically.
+
+The values in that file are meant to be public, like the website's settings, so it's fine in the repository. Your data is protected by `firestore.rules`.
+
+Without the file, the app opens to a "Firebase isn't set up yet" message instead of crashing.
+
+If sign-in says requests are blocked, the API key may be limited to websites. Allow iOS apps for it in Google Cloud console → APIs & Services → Credentials.
 
 ## Files
 

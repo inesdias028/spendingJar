@@ -5,8 +5,8 @@ struct EvenApp: App {
     @State private var auth: AuthModel
 
     init() {
-        FirebaseSetup.configure()
-        _auth = State(initialValue: AuthModel())
+        let ready = FirebaseSetup.configure()
+        _auth = State(initialValue: AuthModel(active: ready))
     }
 
     var body: some Scene {
@@ -43,6 +43,12 @@ struct RootView: View {
         Group {
             if let demoStore {
                 MainTabs().environment(demoStore)
+            } else if !FirebaseSetup.isConfigured {
+                ContentUnavailableView {
+                    Label("Firebase isn't set up yet", systemImage: "gearshape.2")
+                } description: {
+                    Text("This copy of Even was built without GoogleService-Info.plist. Add it to ios/Even/ (Firebase console → Project settings → Your apps → iOS) and build again.")
+                }
             } else if Launch.forceSignIn {
                 AuthView()
             } else if !auth.checked {
