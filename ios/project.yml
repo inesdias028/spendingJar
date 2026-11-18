@@ -19,6 +19,11 @@ targets:
     platform: iOS
     sources:
       - path: Even
+        excludes:
+          - GoogleService-Info.plist
+      # Firebase settings for the iOS app (from the Firebase console). Copied into the app.
+      - path: Even/GoogleService-Info.plist
+        buildPhase: resources
     scheme: {}
     settings:
       base:
