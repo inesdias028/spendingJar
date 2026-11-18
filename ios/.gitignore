@@ -1,0 +1,8 @@
+# Made on the Mac by XcodeGen / Xcode / the build
+Even.xcodeproj/
+build/
+Payload/
+*.ipa
+build.log
+xcuserdata/
+.DS_Store
